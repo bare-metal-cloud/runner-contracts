@@ -353,6 +353,18 @@ func TestEnvEntryValidation(t *testing.T) {
 		spec.Env = []contracts.EnvEntry{{Name: "TOKEN"}}
 		wantRule(t, validate(t, spec), contracts.RuleEnvRequired, "env[0]")
 	})
+	t.Run("too many entries", func(t *testing.T) {
+		spec := validMinimalSpec()
+		spec.Env = nil
+		for i := 0; i <= contracts.MaxEnvEntries; i++ {
+			value := "x"
+			spec.Env = append(spec.Env, contracts.EnvEntry{
+				Name:  fmt.Sprintf("VAR_%03d", i),
+				Value: &value,
+			})
+		}
+		wantRule(t, validate(t, spec), contracts.RuleEnvCount, "env")
+	})
 }
 
 func TestServiceConstraints(t *testing.T) {

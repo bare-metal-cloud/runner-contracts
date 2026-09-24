@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt-clean check failed for:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test battery
+        run: go test ./... -count=1
+
+      - name: Refuse private imports
+        run: |
+          if go list -deps ./... | grep -E '^github\.com/bare-metal-cloud/(backend|agent)(/|$)'; then
+            echo "::error::the module imports a private bare-metal-cloud module; it must stay public-safe (stdlib only)"
+            exit 1
+          fi

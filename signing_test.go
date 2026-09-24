@@ -22,7 +22,7 @@ func loadTestEngineKey(t *testing.T) ed25519.PrivateKey {
 	if err != nil {
 		t.Fatalf("read test seed: %v", err)
 	}
-	seed, err := hex.DecodeString(bytes.TrimSpace(raw))
+	seed, err := hex.DecodeString(string(bytes.TrimSpace(raw)))
 	if err != nil {
 		t.Fatalf("test seed is not hex: %v", err)
 	}
@@ -119,7 +119,10 @@ func TestVerifyRefusesTamperedDocument(t *testing.T) {
 	if err == nil {
 		t.Fatal("Verify accepted a tampered document")
 	}
-	assertRule(t, err, contracts.RuleNotCanonical, "tampered document must fail the canonical re-encode check before signature math")
+	// A same-length value substitution is still canonical JSON, so the
+	// canonical re-encode check passes and the signature itself must
+	// reject the tampered bytes.
+	assertRule(t, err, contracts.RuleSignatureInvalid, "a tampered document must fail signature verification")
 }
 
 func TestVerifyRefusesWrongKey(t *testing.T) {
