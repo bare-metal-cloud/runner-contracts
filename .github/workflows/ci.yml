@@ -34,7 +34,18 @@ jobs:
 
       - name: Refuse private imports
         run: |
-          if go list -deps ./... | grep -E '^github\.com/bare-metal-cloud/(backend|agent)(/|$)'; then
-            echo "::error::the module imports a private bare-metal-cloud module; it must stay public-safe (stdlib only)"
+          offenders=$(go list -deps ./... | grep -E '^github\.com/bare-metal-cloud/' | grep -vE '^github\.com/bare-metal-cloud/runner-contracts(/|$)' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::the module imports a private bare-metal-cloud module; it must stay public-safe (stdlib only):"
+            echo "$offenders"
+            exit 1
+          fi
+
+      - name: License scan (zero third-party dependencies)
+        run: |
+          mods=$(go list -m all | tail -n +2)
+          if [ -n "$mods" ]; then
+            echo "::error::unexpected module dependencies; the module must stay stdlib-only, and any dependency needs a license review before it may land:"
+            echo "$mods"
             exit 1
           fi

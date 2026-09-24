@@ -433,6 +433,123 @@ func TestRequiredAndShapeRefusals(t *testing.T) {
 	})
 }
 
+// TestNameLengthCapRefusals pins the 63-character cap the messages have
+// always claimed: service names, artifact-input names, and artifact-
+// output names longer than MaxNameLength refuse with their name rule.
+func TestNameLengthCapRefusals(t *testing.T) {
+	long := strings.Repeat("n", 100)
+	edge := strings.Repeat("n", contracts.MaxNameLength)
+	over := strings.Repeat("n", contracts.MaxNameLength+1)
+
+	t.Run("service name far over the cap", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.Services[0].Name = long
+		wantRule(t, validate(t, spec), contracts.RuleServiceName, "services[0].name")
+	})
+	t.Run("service name one over the cap", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.Services[0].Name = over
+		wantRule(t, validate(t, spec), contracts.RuleServiceName, "services[0].name")
+	})
+	t.Run("service name at the cap is accepted", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.Services[0].Name = edge
+		if errs := validate(t, spec); len(errs) != 0 {
+			t.Fatalf("a %d-character service name refused: %v", contracts.MaxNameLength, errs)
+		}
+	})
+	t.Run("artifact input name over the cap", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactInputs[0].Name = long
+		wantRule(t, validate(t, spec), contracts.RuleArtifactName, "artifact_inputs[0].name")
+	})
+	t.Run("artifact output name over the cap", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactOutputs[0].Name = long
+		wantRule(t, validate(t, spec), contracts.RuleArtifactName, "artifact_outputs[0].name")
+	})
+}
+
+// TestEgressCountBound pins MaxEgressEntries: the allowlist is a bounded
+// list, not an unbounded bag of suffixes.
+func TestEgressCountBound(t *testing.T) {
+	spec := validMinimalSpec()
+	spec.EgressAllowlist = nil
+	for i := 0; i <= contracts.MaxEgressEntries; i++ {
+		spec.EgressAllowlist = append(spec.EgressAllowlist, fmt.Sprintf("svc%02d.acme.example", i))
+	}
+	wantRule(t, validate(t, spec), contracts.RuleEgressCount, "egress_allowlist")
+
+	spec.EgressAllowlist = spec.EgressAllowlist[:contracts.MaxEgressEntries]
+	if errs := validate(t, spec); len(errs) != 0 {
+		t.Fatalf("exactly MaxEgressEntries allowlist entries refused: %v", errs)
+	}
+}
+
+// TestCommandArgsBound pins MaxCommandArgs for the job's own argv and
+// for every service container's argv.
+func TestCommandArgsBound(t *testing.T) {
+	t.Run("job command", func(t *testing.T) {
+		spec := validMinimalSpec()
+		spec.Command = nil
+		for i := 0; i <= contracts.MaxCommandArgs; i++ {
+			spec.Command = append(spec.Command, fmt.Sprintf("arg%03d", i))
+		}
+		wantRule(t, validate(t, spec), contracts.RuleCommandCount, "command")
+
+		spec.Command = spec.Command[:contracts.MaxCommandArgs]
+		if errs := validate(t, spec); len(errs) != 0 {
+			t.Fatalf("exactly MaxCommandArgs argv entries refused: %v", errs)
+		}
+	})
+	t.Run("service command", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.Services[0].Command = nil
+		for i := 0; i <= contracts.MaxCommandArgs; i++ {
+			spec.Services[0].Command = append(spec.Services[0].Command, fmt.Sprintf("arg%03d", i))
+		}
+		wantRule(t, validate(t, spec), contracts.RuleCommandCount, "services[0].command")
+	})
+}
+
+// TestOutputTagsBound pins MaxOutputTags: the push-time tag set per
+// artifact output is bounded.
+func TestOutputTagsBound(t *testing.T) {
+	spec := validFullSpec()
+	spec.ArtifactOutputs[0].Tags = nil
+	for i := 0; i <= contracts.MaxOutputTags; i++ {
+		spec.ArtifactOutputs[0].Tags = append(spec.ArtifactOutputs[0].Tags, fmt.Sprintf("tag%02d", i))
+	}
+	wantRule(t, validate(t, spec), contracts.RuleOutputTagCount, "artifact_outputs[0].tags")
+
+	spec.ArtifactOutputs[0].Tags = spec.ArtifactOutputs[0].Tags[:contracts.MaxOutputTags]
+	if errs := validate(t, spec); len(errs) != 0 {
+		t.Fatalf("exactly MaxOutputTags tags refused: %v", errs)
+	}
+}
+
+// TestArtifactNameDedupe extends the dedupe law (env names, service
+// names) to artifact-input and artifact-output names: within one list,
+// a name may be used exactly once.
+func TestArtifactNameDedupe(t *testing.T) {
+	t.Run("duplicate input names", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactInputs = append(spec.ArtifactInputs, contracts.ArtifactInput{
+			Name:      spec.ArtifactInputs[0].Name,
+			Reference: imgRef("ghcr.io/acme/sboms", "45"),
+		})
+		wantRule(t, validate(t, spec), contracts.RuleArtifactDuplicate, "artifact_inputs[1].name")
+	})
+	t.Run("duplicate output names", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactOutputs = append(spec.ArtifactOutputs, contracts.ArtifactOutput{
+			Name:       spec.ArtifactOutputs[0].Name,
+			Repository: "registry.acme.example/payments/app-2",
+		})
+		wantRule(t, validate(t, spec), contracts.RuleArtifactDuplicate, "artifact_outputs[1].name")
+	})
+}
+
 func TestArtifactOutputValidation(t *testing.T) {
 	t.Run("repository carries a tag", func(t *testing.T) {
 		spec := validFullSpec()

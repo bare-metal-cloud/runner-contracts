@@ -4,10 +4,10 @@
 // typed reason vocabulary with its class-to-disposition map.
 //
 // The module is open-source-safe by construction: it imports nothing
-// private (a CI guard refuses any bare-metal-cloud/backend or
-// bare-metal-cloud/agent module path), carries the Apache-2.0 publish
-// kit from day one, and contains only generic runner technology — no
-// organization, cluster, or product types.
+// private (a CI guard refuses any bare-metal-cloud module path other
+// than this module itself), carries the Apache-2.0 publish kit from day
+// one, and contains only generic runner technology — no organization,
+// cluster, or product types.
 //
 // Consumers:
 //

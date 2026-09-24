@@ -125,6 +125,33 @@ func TestVerifyRefusesTamperedDocument(t *testing.T) {
 	assertRule(t, err, contracts.RuleSignatureInvalid, "a tampered document must fail signature verification")
 }
 
+// TestVerifyRefusesValidSignatureOverInvalidSpec pins Verify's
+// validate-then-accept law, mirroring Sign's validate-then-act law: a
+// document whose bytes are canonical and whose signature checks out is
+// STILL refused when the spec it carries violates the validation
+// battery. The signature here is made directly with ed25519.Sign — the
+// engine's contracts.Sign would have refused to sign this spec, and a
+// buggy or hostile producer must not be able to smuggle an invalid spec
+// past Verify on the strength of a valid signature alone.
+func TestVerifyRefusesValidSignatureOverInvalidSpec(t *testing.T) {
+	key := loadTestEngineKey(t)
+	pub := key.Public().(ed25519.PublicKey)
+
+	spec := validMinimalSpec()
+	spec.Image = "ghcr.io/acme/payments:latest" // mutable tag: the battery refuses it
+	doc, err := contracts.CanonicalJSON(spec)
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	sig := ed25519.Sign(key, doc) // raw signature over the canonical bytes
+
+	err = contracts.Verify(pub, doc, sig)
+	if err == nil {
+		t.Fatal("Verify accepted a correctly signed but invalid spec")
+	}
+	assertRule(t, err, contracts.RuleDigestOnly, "Verify must run the validation battery after the signature check")
+}
+
 func TestVerifyRefusesWrongKey(t *testing.T) {
 	key := loadTestEngineKey(t)
 	otherSeed := make([]byte, ed25519.SeedSize)
@@ -182,6 +209,21 @@ func TestVerifyRefusesNonCanonicalWireForm(t *testing.T) {
 		t.Fatal("Verify accepted a non-canonical wire form")
 	}
 	assertRule(t, err, contracts.RuleNotCanonical, "non-canonical wire form must be refused by name")
+}
+
+// TestVerifyRefusesOversizedDocument pins the whole-document size guard
+// in Verify: a document larger than MaxDocumentBytes is refused by name
+// before any parsing or cryptographic work.
+func TestVerifyRefusesOversizedDocument(t *testing.T) {
+	pub := ed25519.PublicKey(make([]byte, ed25519.PublicKeySize))
+	sig := make([]byte, ed25519.SignatureSize)
+	doc := bytes.Repeat([]byte("x"), contracts.MaxDocumentBytes+1)
+
+	err := contracts.Verify(pub, doc, sig)
+	if err == nil {
+		t.Fatal("Verify accepted an oversized document")
+	}
+	assertRule(t, err, contracts.RuleDocumentSize, "an oversized document must be refused by the size rule")
 }
 
 func TestSignatureDeterministic(t *testing.T) {

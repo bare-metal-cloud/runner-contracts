@@ -3,6 +3,7 @@ package contracts
 import (
 	"bytes"
 	"crypto/ed25519"
+	"fmt"
 )
 
 // Sign validates the spec against the schema's laws and, only when it is
@@ -41,9 +42,26 @@ func Sign(key ed25519.PrivateKey, spec JobSpec) ([]byte, error) {
 // never verifies even with a valid signature. Only after the byte-form
 // check passes is the signature itself verified.
 //
+// Verify mirrors Sign's validate-then-act law with a validate-then-
+// accept law: after the signature check passes, the parsed spec runs the
+// full validation battery. A document that verifies is by construction a
+// valid spec — a valid signature over an invalid spec (possible only
+// when the signer bypassed Sign) is refused by the spec's failing rule,
+// so a consumer can treat "Verify returned nil" as "this document is
+// canonical, authentic, and valid".
+//
 // The returned error is a typed ValidationErrors naming the failing rule
-// (RuleSignatureInvalid, RuleNotCanonical, or RuleMalformed).
+// (RuleSignatureInvalid, RuleNotCanonical, RuleDocumentSize, or any
+// validation rule, plus RuleMalformed for unparseable documents).
 func Verify(pub ed25519.PublicKey, doc, sig []byte) error {
+	if len(doc) > MaxDocumentBytes {
+		return ValidationErrors{{
+			Field: "document",
+			Rule:  RuleDocumentSize,
+			Message: fmt.Sprintf("document is %d bytes, at most %d are allowed (the %s rule bounds a document before any parsing)",
+				len(doc), MaxDocumentBytes, RuleDocumentSize),
+		}}
+	}
 	var errs ValidationErrors
 	if len(pub) != ed25519.PublicKeySize {
 		errs = append(errs, ValidationError{
@@ -89,6 +107,12 @@ func Verify(pub ed25519.PublicKey, doc, sig []byte) error {
 			Rule:    RuleSignatureInvalid,
 			Message: "signature does not verify over the document with this public key",
 		}}
+	}
+
+	// The validate-then-accept law: a valid signature never smuggles an
+	// invalid spec past verification.
+	if verrs := Validate(spec); len(verrs) != 0 {
+		return verrs
 	}
 	return nil
 }

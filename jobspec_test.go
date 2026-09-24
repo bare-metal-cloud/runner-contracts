@@ -3,6 +3,7 @@ package contracts_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,6 +105,125 @@ func TestDecodeJobSpecMalformedDocument(t *testing.T) {
 	if len(errs) == 0 || errs[0].Rule != contracts.RuleMalformed {
 		t.Fatalf("rule = %v, want %s", errs, contracts.RuleMalformed)
 	}
+}
+
+// TestDecodeJobSpecRefusesCaseVariantField pins the exact-key law: the
+// decoder matches schema keys case-SENSITIVELY, so "JOB_ID" is an unknown
+// field even though encoding/json's struct decode would happily fold it
+// into job_id by its case-insensitive match. A case-variant key almost
+// always means the sender meant something the receiver would silently
+// move.
+func TestDecodeJobSpecRefusesCaseVariantField(t *testing.T) {
+	base, err := contracts.CanonicalJSON(validMinimalSpec())
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(base, &generic); err != nil {
+		t.Fatalf("fixture is not JSON: %v", err)
+	}
+	generic["JOB_ID"] = "job-20260924-999999"
+	doctored, err := json.Marshal(generic)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+
+	_, err = contracts.DecodeJobSpec(doctored)
+	if err == nil {
+		t.Fatal("DecodeJobSpec accepted a case-variant schema key; want refusal")
+	}
+	assertUnknownFieldNames(t, err, "JOB_ID")
+}
+
+// TestDecodeJobSpecRefusesDuplicateKeys pins the duplicate-key law: a
+// document carrying the same schema field twice (under the exact same
+// key, or under a case-variant sibling of it) is refused, never silently
+// last-value-wins.
+func TestDecodeJobSpecRefusesDuplicateKeys(t *testing.T) {
+	t.Run("duplicate job_id and JOB_ID", func(t *testing.T) {
+		base, err := contracts.CanonicalJSON(validMinimalSpec())
+		if err != nil {
+			t.Fatalf("CanonicalJSON: %v", err)
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(base, &generic); err != nil {
+			t.Fatalf("fixture is not JSON: %v", err)
+		}
+		generic["JOB_ID"] = "job-20260924-999999"
+		doctored, err := json.Marshal(generic)
+		if err != nil {
+			t.Fatalf("re-marshal: %v", err)
+		}
+		_, err = contracts.DecodeJobSpec(doctored)
+		if err == nil {
+			t.Fatal("DecodeJobSpec accepted job_id alongside its case-variant JOB_ID; want refusal")
+		}
+		assertUnknownFieldNames(t, err, "JOB_ID")
+	})
+	t.Run("exact duplicate job_id", func(t *testing.T) {
+		raw := []byte(`{"job_id":"job-a","job_id":"job-b"}`)
+		_, err := contracts.DecodeJobSpec(raw)
+		if err == nil {
+			t.Fatal("DecodeJobSpec accepted a duplicated job_id; want refusal")
+		}
+		assertUnknownFieldNames(t, err, "job_id")
+	})
+}
+
+// TestDecodeJobSpecRefusesOversizedDocument pins the whole-document size
+// guard: a document larger than MaxDocumentBytes is refused by name
+// before any parsing, bounding the work a hostile document can force.
+func TestDecodeJobSpecRefusesOversizedDocument(t *testing.T) {
+	base, err := contracts.CanonicalJSON(validMinimalSpec())
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(base, &generic); err != nil {
+		t.Fatalf("fixture is not JSON: %v", err)
+	}
+	generic["wat"] = strings.Repeat("a", contracts.MaxDocumentBytes)
+	doctored, err := json.Marshal(generic)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	if len(doctored) <= contracts.MaxDocumentBytes {
+		t.Fatal("test is broken: the doctored document does not exceed the size cap")
+	}
+
+	_, err = contracts.DecodeJobSpec(doctored)
+	if err == nil {
+		t.Fatal("DecodeJobSpec accepted an oversized document; want refusal")
+	}
+	errs, ok := err.(contracts.ValidationErrors)
+	if !ok {
+		t.Fatalf("error is %T, want contracts.ValidationErrors", err)
+	}
+	var found bool
+	for _, e := range errs {
+		if e.Rule == contracts.RuleDocumentSize && strings.Contains(e.Message, fmt.Sprintf("%d", contracts.MaxDocumentBytes)) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no document_size error naming the cap in %v", errs)
+	}
+}
+
+// assertUnknownFieldNames asserts that err is a ValidationErrors carrying
+// an unknown_field finding whose message names field.
+func assertUnknownFieldNames(t *testing.T, err error, field string) {
+	t.Helper()
+	errs, ok := err.(contracts.ValidationErrors)
+	if !ok {
+		t.Fatalf("error is %T, want contracts.ValidationErrors", err)
+	}
+	for _, e := range errs {
+		if e.Rule == contracts.RuleUnknownField && strings.Contains(e.Message, field) {
+			return
+		}
+	}
+	t.Fatalf("no unknown_field error naming %q in %v", field, errs)
 }
 
 func TestIdempotencyKeyComposition(t *testing.T) {

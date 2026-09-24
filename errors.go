@@ -36,38 +36,43 @@ func (errs ValidationErrors) Error() string {
 // The Rule* constants are the machine-readable rule identifiers carried
 // by ValidationError. Consumers match on these, never on message text.
 const (
-	RuleUnknownField     = "unknown_field"
-	RuleMalformed        = "malformed_document"
-	RuleRequired         = "required"
-	RuleJobID            = "job_id"
-	RuleRunReference     = "run_reference"
-	RuleAttempt          = "attempt"
-	RuleDigestOnly       = "digest_only"
-	RuleOCIRepository    = "oci_repository"
-	RuleOutputTag        = "output_tag"
-	RuleServiceName      = "service_name"
-	RuleServiceDuplicate = "service_duplicate"
-	RuleServiceCount     = "service_count"
-	RuleEnvName          = "env_name"
-	RuleEnvConflict      = "env_conflict"
-	RuleEnvRequired      = "env_required"
-	RuleEnvDuplicate     = "env_duplicate"
-	RuleEnvCount         = "env_count"
-	RuleSecretReference  = "secret_reference"
-	RuleCommand          = "command"
-	RuleTimeout          = "timeout"
-	RuleLimitsPositive   = "limits_positive"
-	RuleLimitsBounded    = "limits_bounded"
-	RuleEgressSuffix     = "egress_suffix"
-	RuleTagKey           = "metering_tag_key"
-	RuleTagValue         = "metering_tag_value"
-	RuleTagCount         = "metering_tag_count"
-	RuleArtifactName     = "artifact_name"
-	RuleArtifactCount    = "artifact_count"
-	RuleNotCanonical     = "not_canonical"
-	RuleSignatureInvalid = "signature_invalid"
-	RuleReasonClass      = "reason_class"
-	RuleReasonMessage    = "reason_message"
+	RuleUnknownField      = "unknown_field"
+	RuleMalformed         = "malformed_document"
+	RuleRequired          = "required"
+	RuleJobID             = "job_id"
+	RuleRunReference      = "run_reference"
+	RuleAttempt           = "attempt"
+	RuleDigestOnly        = "digest_only"
+	RuleOCIRepository     = "oci_repository"
+	RuleOutputTag         = "output_tag"
+	RuleOutputTagCount    = "output_tag_count"
+	RuleServiceName       = "service_name"
+	RuleServiceDuplicate  = "service_duplicate"
+	RuleServiceCount      = "service_count"
+	RuleEnvName           = "env_name"
+	RuleEnvConflict       = "env_conflict"
+	RuleEnvRequired       = "env_required"
+	RuleEnvDuplicate      = "env_duplicate"
+	RuleEnvCount          = "env_count"
+	RuleSecretReference   = "secret_reference"
+	RuleCommand           = "command"
+	RuleCommandCount      = "command_count"
+	RuleTimeout           = "timeout"
+	RuleLimitsPositive    = "limits_positive"
+	RuleLimitsBounded     = "limits_bounded"
+	RuleEgressSuffix      = "egress_suffix"
+	RuleEgressCount       = "egress_count"
+	RuleTagKey            = "metering_tag_key"
+	RuleTagValue          = "metering_tag_value"
+	RuleTagCount          = "metering_tag_count"
+	RuleArtifactName      = "artifact_name"
+	RuleArtifactCount     = "artifact_count"
+	RuleArtifactDuplicate = "artifact_duplicate"
+	RuleDocumentSize      = "document_size"
+	RuleNotCanonical      = "not_canonical"
+	RuleSignatureInvalid  = "signature_invalid"
+	RuleReasonClass       = "reason_class"
+	RuleReasonMessage     = "reason_message"
 )
 
 // The schema's sanity bounds. They are admission sanity limits, not
@@ -87,6 +92,20 @@ const (
 	MaxArtifactInputs  = 32
 	MaxArtifactOutputs = 16
 	MaxMeteringTags    = 32
+	// MaxEgressEntries bounds the egress allowlist.
+	MaxEgressEntries = 32
+	// MaxCommandArgs bounds each command's argv length (the job's own
+	// command and every service container's command).
+	MaxCommandArgs = 64
+	// MaxOutputTags bounds the push-time tag list per artifact output.
+	MaxOutputTags = 16
+	// MaxNameLength bounds service names and artifact-input/output
+	// names (the length the name rules' messages have always claimed).
+	MaxNameLength = 63
+	// MaxDocumentBytes bounds the raw size of a job-spec document. It
+	// is enforced by DecodeJobSpec and Verify before any parsing, so a
+	// hostile document cannot force unbounded work.
+	MaxDocumentBytes = 1 << 20 // 1 MiB
 	// MaxMeteringTagKeyLength bounds each metering tag key.
 	MaxMeteringTagKeyLength = 64
 	// MaxMeteringTagValueLength bounds each metering tag value.

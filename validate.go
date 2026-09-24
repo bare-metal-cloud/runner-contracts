@@ -97,9 +97,13 @@ func Validate(spec JobSpec) ValidationErrors {
 		}
 	}
 
-	// The job's own command: required, every entry non-empty.
+	// The job's own command: required, every entry non-empty, length
+	// bounded.
 	if len(spec.Command) == 0 {
 		add(required("command"))
+	}
+	if len(spec.Command) > MaxCommandArgs {
+		add(countError("command", len(spec.Command), MaxCommandArgs, RuleCommandCount, "argv entries"))
 	}
 	for i, c := range spec.Command {
 		if c == "" {
@@ -115,12 +119,12 @@ func Validate(spec JobSpec) ValidationErrors {
 	for i, svc := range spec.Services {
 		nameField := fmt.Sprintf("services[%d].name", i)
 		switch {
-		case svc.Name == "" || !nameRe.MatchString(svc.Name):
+		case svc.Name == "" || len(svc.Name) > MaxNameLength || !nameRe.MatchString(svc.Name):
 			add(ValidationError{
 				Field: nameField,
 				Rule:  RuleServiceName,
-				Message: fmt.Sprintf("service name %q must be at most 63 lowercase letters, digits, and inner hyphens",
-					svc.Name),
+				Message: fmt.Sprintf("service name %q must be at most %d lowercase letters, digits, and inner hyphens",
+					svc.Name, MaxNameLength),
 			})
 		case seenServices[svc.Name]:
 			add(ValidationError{
@@ -134,6 +138,9 @@ func Validate(spec JobSpec) ValidationErrors {
 			add(required(fmt.Sprintf("services[%d].image", i)))
 		} else if e, bad := digestReferenceError(fmt.Sprintf("services[%d].image", i), svc.Image); bad {
 			add(e)
+		}
+		if len(svc.Command) > MaxCommandArgs {
+			add(countError(fmt.Sprintf("services[%d].command", i), len(svc.Command), MaxCommandArgs, RuleCommandCount, "argv entries"))
 		}
 		for j, c := range svc.Command {
 			if c == "" {
@@ -188,18 +195,30 @@ func Validate(spec JobSpec) ValidationErrors {
 		}
 	}
 
-	// Artifact inputs: digest-pinned references the job consumes.
+	// Artifact inputs: digest-pinned references the job consumes. Names
+	// are unique within the list, mirroring env names and service names.
 	if len(spec.ArtifactInputs) > MaxArtifactInputs {
 		add(countError("artifact_inputs", len(spec.ArtifactInputs), MaxArtifactInputs, RuleArtifactCount, "artifact inputs"))
 	}
+	seenInputs := make(map[string]bool, len(spec.ArtifactInputs))
 	for i, input := range spec.ArtifactInputs {
-		if input.Name == "" || !nameRe.MatchString(input.Name) {
+		nameField := fmt.Sprintf("artifact_inputs[%d].name", i)
+		switch {
+		case input.Name == "" || len(input.Name) > MaxNameLength || !nameRe.MatchString(input.Name):
 			add(ValidationError{
-				Field:   fmt.Sprintf("artifact_inputs[%d].name", i),
-				Rule:    RuleArtifactName,
-				Message: fmt.Sprintf("artifact input name %q must be at most 63 lowercase letters, digits, and inner hyphens", input.Name),
+				Field: nameField,
+				Rule:  RuleArtifactName,
+				Message: fmt.Sprintf("artifact input name %q must be at most %d lowercase letters, digits, and inner hyphens",
+					input.Name, MaxNameLength),
+			})
+		case seenInputs[input.Name]:
+			add(ValidationError{
+				Field:   nameField,
+				Rule:    RuleArtifactDuplicate,
+				Message: fmt.Sprintf("artifact input name %q is already used by an earlier input in this job", input.Name),
 			})
 		}
+		seenInputs[input.Name] = true
 		if input.Reference == "" {
 			add(required(fmt.Sprintf("artifact_inputs[%d].reference", i)))
 		} else if e, bad := digestReferenceError(fmt.Sprintf("artifact_inputs[%d].reference", i), input.Reference); bad {
@@ -208,18 +227,30 @@ func Validate(spec JobSpec) ValidationErrors {
 	}
 
 	// Artifact outputs: bare repositories (tags are applied at push
-	// time and are exempt from the digest-only law).
+	// time and are exempt from the digest-only law). Names are unique
+	// within the list, mirroring env names and service names.
 	if len(spec.ArtifactOutputs) > MaxArtifactOutputs {
 		add(countError("artifact_outputs", len(spec.ArtifactOutputs), MaxArtifactOutputs, RuleArtifactCount, "artifact outputs"))
 	}
+	seenOutputs := make(map[string]bool, len(spec.ArtifactOutputs))
 	for i, output := range spec.ArtifactOutputs {
-		if output.Name == "" || !nameRe.MatchString(output.Name) {
+		nameField := fmt.Sprintf("artifact_outputs[%d].name", i)
+		switch {
+		case output.Name == "" || len(output.Name) > MaxNameLength || !nameRe.MatchString(output.Name):
 			add(ValidationError{
-				Field:   fmt.Sprintf("artifact_outputs[%d].name", i),
-				Rule:    RuleArtifactName,
-				Message: fmt.Sprintf("artifact output name %q must be at most 63 lowercase letters, digits, and inner hyphens", output.Name),
+				Field: nameField,
+				Rule:  RuleArtifactName,
+				Message: fmt.Sprintf("artifact output name %q must be at most %d lowercase letters, digits, and inner hyphens",
+					output.Name, MaxNameLength),
+			})
+		case seenOutputs[output.Name]:
+			add(ValidationError{
+				Field:   nameField,
+				Rule:    RuleArtifactDuplicate,
+				Message: fmt.Sprintf("artifact output name %q is already used by an earlier output in this job", output.Name),
 			})
 		}
+		seenOutputs[output.Name] = true
 		if output.Repository == "" {
 			add(required(fmt.Sprintf("artifact_outputs[%d].repository", i)))
 		} else if !ociRepositoryRe.MatchString(output.Repository) {
@@ -228,6 +259,9 @@ func Validate(spec JobSpec) ValidationErrors {
 				Rule:    RuleOCIRepository,
 				Message: fmt.Sprintf("artifact output repository %q must be a bare repository path (no tag, no digest); push-time tags are carried by the tags field", output.Repository),
 			})
+		}
+		if len(output.Tags) > MaxOutputTags {
+			add(countError(fmt.Sprintf("artifact_outputs[%d].tags", i), len(output.Tags), MaxOutputTags, RuleOutputTagCount, "tags"))
 		}
 		for j, tag := range output.Tags {
 			if !outputTagRe.MatchString(tag) {
@@ -272,6 +306,11 @@ func Validate(spec JobSpec) ValidationErrors {
 				Message: fmt.Sprintf("%s %d is outside the sane admission range [%d, %d]", lc.field, lc.value, lc.min, lc.max),
 			})
 		}
+	}
+	// Egress: the allowlist is a bounded list of hostname suffixes; an
+	// empty list is legal and means deny-all.
+	if len(spec.EgressAllowlist) > MaxEgressEntries {
+		add(countError("egress_allowlist", len(spec.EgressAllowlist), MaxEgressEntries, RuleEgressCount, "allowlist entries"))
 	}
 	for i, entry := range spec.EgressAllowlist {
 		if !isHostnameSuffix(entry) {

@@ -31,12 +31,27 @@ consumer. Licensed under Apache-2.0.
   `blob.registry.acme.example` but not `evilregistry.acme.example`);
   matching is enforced at the container and network level on the runner.
 - **Strict decode.** `DecodeJobSpec` refuses a document that carries any
-  field the schema does not know, and names the field.
+  field the schema does not know, and names the field. Keys are matched
+  case-sensitively (a `JOB_ID` variant is refused, not folded into
+  `job_id`), duplicate keys are refused instead of silently
+  last-value-wins, and a document larger than `MaxDocumentBytes` (1 MiB)
+  is refused before any parsing.
 - **Canonical form where signatures live.** `CanonicalJSON` produces a
   deterministic byte form (struct field order, sorted map keys, compact,
   no HTML escaping). `Verify` refuses a document whose bytes are not that
   form, even when the JSON content is equivalent, so a signature always
   covers exactly the bytes both consumers see.
+- **Verify validates.** `Verify` mirrors `Sign`'s validate-then-act law:
+  after the signature check passes, the parsed spec runs the full
+  validation battery. A valid signature over an invalid spec (possible
+  only when the signer bypassed `Sign`) is refused by the spec's failing
+  rule, so "Verify returned nil" means the document is canonical,
+  authentic, and valid.
+- **Bounded documents.** The schema's counts are sanity-bounded by named
+  maxima (services, env entries, artifact inputs and outputs, egress
+  allowlist entries, argv length per command, push-time tags per output,
+  metering tags) and a whole-document raw-size cap
+  (`MaxDocumentBytes`), so no document can force unbounded work.
 - **Idempotency by construction.** The job's idempotency key is the pair
   `(run_reference, attempt)`; the pool refuses a duplicate key, while a
   refused or errored submission does not register its key, so the
@@ -58,13 +73,17 @@ if err != nil {
     return err
 }
 if err := contracts.Verify(publicKey, doc, sig); err != nil {
-    return err // refuse the document
+    return err // refuses bad signatures, non-canonical bytes, oversized documents, and invalid specs
 }
 decoded, err := contracts.DecodeJobSpec(doc)
 if err != nil {
-    return err // refuse unknown fields and malformed documents
+    return err // after a nil Verify this can only be a decode-level refusal (malformed, unknown field, oversized)
 }
 ```
+
+Because `Verify` runs the full validation battery after the signature
+check, the verify-then-decode flow above never hands an invalid spec
+onward: a document that verifies is by construction a valid spec.
 
 The validation battery refuses a spec that violates a law, with a typed,
 machine-readable error naming the rule and the field. For example, a
@@ -119,9 +138,14 @@ gofmt -l .               # must be empty
 go vet ./...             # must be clean
 ```
 
-CI runs the battery, the formatting and vet checks, and the
-private-import guard: `go list -deps ./...` must contain no private
-module path.
+CI runs the battery, the formatting and vet checks, the private-import
+guard, and the license scan. The private-import guard fails on ANY
+`github.com/bare-metal-cloud/` dependency other than
+`github.com/bare-metal-cloud/runner-contracts` itself (so runner-pool
+and any future private module trip it). The license scan fails if
+`go list -m all` reports any module beyond runner-contracts: the module
+must stay stdlib-only, and a dependency may land only after a license
+review.
 
 ## License
 

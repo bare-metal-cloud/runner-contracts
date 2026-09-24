@@ -173,4 +173,4 @@ func TestReorderedJSONDecodesToIdenticalSpec(t *testing.T) {
 	if !bytes.Equal(canonical, pinned) {
 		t.Fatalf("reordered document decoded to different content:\n pinned: %s\n decoded: %s", pinned, canonical)
 	}
-} // keep the ed25519 import for key-size guards
+}
