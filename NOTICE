@@ -1,0 +1,10 @@
+bare-metal-cloud/runner-contracts
+Copyright 2026 Bare Metal Cloud
+
+This product includes software developed by Bare Metal Cloud.
+
+The job-spec schema, the signing and verification API, the validation
+battery, and the reason vocabulary in this module are generic runner
+technology. They carry no organization-specific, cluster-specific, or
+product-specific types, so the module is safe to publish and to consume
+from open-source runners.

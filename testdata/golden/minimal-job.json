@@ -1,0 +1,1 @@
+{"job_id":"job-20260924-000001","run_reference":"acme/payments@main:run-418","attempt":1,"image":"ghcr.io/acme/payments@sha256:abababababababababababababababababababababababababababababababab","command":["make","test"],"timeout_seconds":1800,"limits":{"cpu_millicores":4000,"memory_bytes":8589934592,"disk_bytes":68719476736},"egress_allowlist":[],"metering_tags":{}}

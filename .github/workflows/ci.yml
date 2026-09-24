@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt-clean check failed for:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test battery
+        run: go test ./... -count=1
+
+      - name: Refuse private imports
+        run: |
+          offenders=$(go list -deps ./... | grep -E '^github\.com/bare-metal-cloud/' | grep -vE '^github\.com/bare-metal-cloud/runner-contracts(/|$)' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::the module imports a private bare-metal-cloud module; it must stay public-safe (stdlib only):"
+            echo "$offenders"
+            exit 1
+          fi
+
+      - name: License scan (zero third-party dependencies)
+        run: |
+          mods=$(go list -m all | tail -n +2)
+          if [ -n "$mods" ]; then
+            echo "::error::unexpected module dependencies; the module must stay stdlib-only, and any dependency needs a license review before it may land:"
+            echo "$mods"
+            exit 1
+          fi
