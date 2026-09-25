@@ -1,3 +1,3 @@
 module github.com/bare-metal-cloud/runner-contracts
 
-go 1.27
+go 1.26.5
