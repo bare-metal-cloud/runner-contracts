@@ -58,11 +58,54 @@ func validFullSpec() contracts.JobSpec {
 	}
 }
 
+// validBuildSpec is the fully-populated BuildJobSpec-class fixture: the
+// git-source build a dispatch composes (the source ref, the resolved
+// plan, the push target, the credential REFERENCES, the log topic).
+func validBuildSpec() contracts.JobSpec {
+	srcRef := "credential-store://build/acme-platform-source-pull" //nolint:gosec // a reference, not a credential
+	pushRef := "credential-store://build/acme-app-registry-push"
+	return contracts.JobSpec{
+		JobID:        "bld-9f1c2a3e-4b5d-4e6f-8a9b-0c1d2e3f4a5b",
+		RunReference: "acme/payments@main:build-run-418",
+		Attempt:      2,
+		Source: &contracts.SourceRef{
+			Repo:   "https://git.acme.example/acme/platform.git",
+			Commit: sha256hex("cc"),
+		},
+		Image:          imgRef("ghcr.io/acme/builder", "de"),
+		Command:        []string{"buildkit-render"},
+		TimeoutSeconds: 7200,
+		Build: &contracts.BuildSpec{
+			BaseImage:              imgRef("ghcr.io/acme/builder", "de"),
+			Strategy:               "plan",
+			Runtime:                "node:22",
+			Install:                "npm ci",
+			Build:                  "npm run build",
+			Start:                  "npm start",
+			Port:                   3000,
+			SourcePullCredential:   srcRef,
+			RegistryPushCredential: pushRef,
+		},
+		ArtifactOutputs: []contracts.ArtifactOutput{
+			{Name: "app-image", Repository: "registry.acme.example/payments/app", Tags: []string{"rev-418"}},
+		},
+		Limits: contracts.ResourceLimits{
+			CPUMillicores: 8000,
+			MemoryBytes:   16 * GiB,
+			DiskBytes:     TiB,
+		},
+		EgressAllowlist: []string{"registry.acme.example", "git.acme.example"},
+		MeteringTags:    map[string]string{"org": "acme", "project": "payments", "kind": "build"},
+		LogTopicID:      "org-1-build-run-418",
+	}
+}
+
 // goldenFixtures maps fixture names to the specs they pin.
 func goldenFixtures() map[string]contracts.JobSpec {
 	return map[string]contracts.JobSpec{
 		"minimal-job":           validMinimalSpec(),
 		"full-job":              validFullSpec(),
+		"build-job":             validBuildSpec(),
 		"tierv-convergence-job": tierVConvergenceSpec(),
 	}
 }

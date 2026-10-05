@@ -68,6 +68,13 @@ const (
 	RuleArtifactName      = "artifact_name"
 	RuleArtifactCount     = "artifact_count"
 	RuleArtifactDuplicate = "artifact_duplicate"
+	RuleSourceRepo        = "source_repo"
+	RuleSourceCommit      = "source_commit"
+	RuleBuildStrategy     = "build_strategy"
+	RuleBuildPlanRow      = "build_plan_row"
+	RuleBuildPort         = "build_port"
+	RuleBuildCredRef      = "build_credential_reference" //nolint:gosec // rule identifier, not a credential
+	RuleLogTopic          = "log_topic_id"
 	RuleDocumentSize      = "document_size"
 	RuleNotCanonical      = "not_canonical"
 	RuleSignatureInvalid  = "signature_invalid"
@@ -114,4 +121,11 @@ const (
 	MaxJobIDLength = 128
 	// MaxRunReferenceLength bounds the run reference.
 	MaxRunReferenceLength = 256
+	// MaxSourceRepoLength bounds the source repository URL.
+	MaxSourceRepoLength = 512
+	// MaxPlanRowLength bounds each resolved-plan row (runtime, install,
+	// build, start commands).
+	MaxPlanRowLength = 512
+	// MaxLogTopicIDLength bounds the build-log channel identifier.
+	MaxLogTopicIDLength = 256
 )
