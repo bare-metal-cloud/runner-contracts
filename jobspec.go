@@ -26,6 +26,13 @@ type JobSpec struct {
 	// key, so the legitimate retry with the same key is accepted.
 	Attempt int `json:"attempt"`
 
+	// Source names the source tree a BUILD job compiles (the
+	// BuildJobSpec class): the repository URL and the exact commit the
+	// build pins. Nil on ordinary CI jobs (they carry no source). The
+	// commit is the only identity the build trusts — a mutable ref is
+	// never carried on the wire.
+	Source *SourceRef `json:"source,omitempty"`
+
 	// Image is the digest-only container image the job's command runs
 	// in (the `run` step image).
 	Image string `json:"image"`
@@ -77,6 +84,28 @@ type JobSpec struct {
 	// events. Keys are constrained ([a-z0-9_-], max length) and the
 	// count is bounded.
 	MeteringTags map[string]string `json:"metering_tags"`
+
+	// LogTopicID names the event-gateway channel the job's log lines
+	// stream through (the BuildJobSpec class's build-log channel; D14).
+	// Empty on jobs that stream no logs. It is an identifier, never a
+	// credential: a consumer subscribes through the gateway's own
+	// fail-closed registration, never through this value.
+	LogTopicID string `json:"log_topic_id,omitempty"`
+}
+
+// SourceRef is the source tree a build job compiles: the repository
+// URL and the exact commit. The commit is the build's only source
+// identity — the wire carries no mutable ref, so what the builder
+// checks out is exactly what the control plane named.
+type SourceRef struct {
+	// Repo is the repository URL (https or ssh form). It locates the
+	// tree; it carries no credential material — the pull credential
+	// travels as a BuildSpec reference.
+	Repo string `json:"repo"`
+
+	// Commit is the exact commit the build pins: a full git object id
+	// (40 or 64 lowercase hex characters, SHA-1 or SHA-256).
+	Commit string `json:"commit"`
 }
 
 // ServiceContainer is a sibling container started alongside the job.
@@ -93,10 +122,59 @@ type ServiceContainer struct {
 	Command []string `json:"command,omitempty"`
 }
 
-// BuildSpec carries the `build` step fields.
+// BuildSpec carries the `build` step fields. It serves two shapes of
+// the same field set:
+//
+//   - the BuildJobSpec class (a git-source build): Strategy names the
+//     build strategy and the plan rows carry the RESOLVED build plan
+//     (the Session-32 build-block grammar — strategy, runtime,
+//     install, build, start — mirrored field for field; the contracts
+//     module imports no deploykit types). The pull and push
+//     credentials travel as credential-store REFERENCES, never values.
+//   - the legacy CI build shape (a daemonless image build): only
+//     BaseImage is set, digest-only. Strategy stays empty there, and
+//     the validation battery keeps the historical rules for it.
 type BuildSpec struct {
-	// BaseImage is the digest-only image the build runs from.
+	// BaseImage is the digest-only image the build runs from. On the
+	// BuildJobSpec class it is the digest-pinned builder image (the
+	// D4 pinning law); on the legacy CI shape it is the build's base.
 	BaseImage string `json:"base_image"`
+
+	// Strategy is the build strategy: plan | dockerfile (the
+	// blueprint build-block vocabulary, mirrored). Required for the
+	// BuildJobSpec class; empty on the legacy CI shape.
+	Strategy string `json:"strategy,omitempty"`
+
+	// Runtime is the engine-resolved runtime ("node:22") — a plan row,
+	// evidence-carrying, not a pulled reference (it is not bound by
+	// the digest-only law; the builder image itself is).
+	Runtime string `json:"runtime,omitempty"`
+
+	// Install is the install command ("npm ci").
+	Install string `json:"install,omitempty"`
+
+	// Build is the build command ("npm run build").
+	Build string `json:"build,omitempty"`
+
+	// Start is the keep-alive start command ("npm start") — the
+	// crash → restart, logs-stay contract. Required on the
+	// BuildJobSpec class (both strategies).
+	Start string `json:"start,omitempty"`
+
+	// Port is the service's serving port (0 = none declared).
+	Port int `json:"port,omitempty"`
+
+	// SourcePullCredential names the credential-store key the builder
+	// exchanges for THE source pull (read-only, scoped to the one
+	// repository). A reference, never a value: the grammar is the
+	// credential-store:// form, and inline secret material is refused
+	// by the validation battery (the isolation negative-set).
+	SourcePullCredential string `json:"source_pull_credential,omitempty"`
+
+	// RegistryPushCredential names the credential-store key the
+	// builder exchanges for THE image push (the one push target).
+	// Same reference-only law as SourcePullCredential.
+	RegistryPushCredential string `json:"registry_push_credential,omitempty"`
 }
 
 // EnvEntry is one environment entry. Exactly one of Value and

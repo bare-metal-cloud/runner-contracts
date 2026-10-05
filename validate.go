@@ -89,12 +89,11 @@ func Validate(spec JobSpec) ValidationErrors {
 	} else if e, bad := digestReferenceError("image", spec.Image); bad {
 		add(e)
 	}
+	if spec.Source != nil {
+		validateSourceRef(spec.Source, &errs)
+	}
 	if spec.Build != nil {
-		if spec.Build.BaseImage == "" {
-			add(required("build.base_image"))
-		} else if e, bad := digestReferenceError("build.base_image", spec.Build.BaseImage); bad {
-			add(e)
-		}
+		validateBuildSpec(spec.Build, &errs)
 	}
 
 	// The job's own command: required, every entry non-empty, length
@@ -344,7 +343,126 @@ func Validate(spec JobSpec) ValidationErrors {
 		}
 	}
 
+	// Log topic: the build-log channel identifier, an identity bound
+	// by length and whitespace, never credential-shaped material.
+	if spec.LogTopicID != "" {
+		if len(spec.LogTopicID) > MaxLogTopicIDLength || containsWhitespace(spec.LogTopicID) {
+			add(ValidationError{
+				Field: "log_topic_id",
+				Rule:  RuleLogTopic,
+				Message: fmt.Sprintf("log_topic_id %q must be at most %d characters and carry no whitespace",
+					spec.LogTopicID, MaxLogTopicIDLength),
+			})
+		}
+	}
+
 	return errs
+}
+
+// validateSourceRef enforces the source-ref grammar: the repo URL is a
+// bounded, whitespace-free locator and the commit is a full git object
+// id (40 or 64 lowercase hex — SHA-1 or SHA-256). A short or abbreviated
+// commit is refused: the build pins THE commit, not a neighborhood.
+func validateSourceRef(src *SourceRef, errs *ValidationErrors) {
+	if src.Repo == "" {
+		*errs = append(*errs, required("source.repo"))
+	} else if len(src.Repo) > MaxSourceRepoLength || containsWhitespace(src.Repo) {
+		*errs = append(*errs, ValidationError{
+			Field:   "source.repo",
+			Rule:    RuleSourceRepo,
+			Message: fmt.Sprintf("source repo %q must be at most %d characters and carry no whitespace", src.Repo, MaxSourceRepoLength),
+		})
+	}
+	switch {
+	case src.Commit == "":
+		*errs = append(*errs, required("source.commit"))
+	case !isGitCommitID(src.Commit):
+		*errs = append(*errs, ValidationError{
+			Field: "source.commit",
+			Rule:  RuleSourceCommit,
+			Message: fmt.Sprintf("source commit %q must be a full git object id (40 or 64 lowercase hex); "+
+				"abbreviated or mutable refs are never carried", src.Commit),
+		})
+	}
+}
+
+// validateBuildSpec enforces the build step's rules for BOTH shapes.
+// The strategy field discriminates: an empty strategy is the legacy CI
+// build shape (BaseImage only, the historical rules); a named strategy
+// is the BuildJobSpec class and carries the resolved plan — strategy
+// vocabulary, the keep-alive start on both strategies, the full plan
+// rows on `plan`, the serving port range, and the credential
+// REFERENCES (never values) for the source pull and the image push.
+func validateBuildSpec(b *BuildSpec, errs *ValidationErrors) {
+	if b.BaseImage == "" {
+		*errs = append(*errs, required("build.base_image"))
+	} else if e, bad := digestReferenceError("build.base_image", b.BaseImage); bad {
+		*errs = append(*errs, e)
+	}
+
+	if b.Strategy == "" {
+		// Legacy CI build shape: nothing beyond the BaseImage law.
+		return
+	}
+	if b.Strategy != "plan" && b.Strategy != "dockerfile" {
+		*errs = append(*errs, ValidationError{
+			Field:   "build.strategy",
+			Rule:    RuleBuildStrategy,
+			Message: fmt.Sprintf("build strategy %q is not in the vocabulary (plan | dockerfile)", b.Strategy),
+		})
+		return
+	}
+	if b.Start == "" {
+		*errs = append(*errs, required("build.start"))
+	}
+	// The plan rows: on strategy=plan the FULL plan is required (the
+	// blueprint's own law — a missing row is a violation, not a gap);
+	// on dockerfile the rows stay empty (the Dockerfile owns them) and
+	// are only length-bounded when present.
+	for _, row := range []struct {
+		field    string
+		value    string
+		required bool
+	}{
+		{"build.runtime", b.Runtime, b.Strategy == "plan"},
+		{"build.install", b.Install, b.Strategy == "plan"},
+		{"build.build", b.Build, b.Strategy == "plan"},
+	} {
+		switch {
+		case row.value == "" && row.required:
+			*errs = append(*errs, required(row.field))
+		case len(row.value) > MaxPlanRowLength:
+			*errs = append(*errs, ValidationError{
+				Field:   row.field,
+				Rule:    RuleBuildPlanRow,
+				Message: fmt.Sprintf("%s is %d characters, at most %d are allowed", row.field, len(row.value), MaxPlanRowLength),
+			})
+		}
+	}
+	if b.Port < 0 || b.Port > 65535 {
+		*errs = append(*errs, ValidationError{
+			Field:   "build.port",
+			Rule:    RuleBuildPort,
+			Message: fmt.Sprintf("build port %d must be between 0 (none declared) and 65535", b.Port),
+		})
+	}
+	for _, cred := range []struct {
+		field string
+		value string
+	}{
+		{"build.source_pull_credential", b.SourcePullCredential},
+		{"build.registry_push_credential", b.RegistryPushCredential},
+	} {
+		if cred.value != "" && !isSecretReference(cred.value) {
+			*errs = append(*errs, ValidationError{
+				Field: cred.field,
+				Rule:  RuleBuildCredRef,
+				Message: fmt.Sprintf("credential %q must name a platform credential-store key of the form "+
+					"credential-store://<namespace>/<key>; build credentials travel as REFERENCES, never inline values",
+					cred.value),
+			})
+		}
+	}
 }
 
 // digestReferenceError enforces the digest-only law for one image-bearing
@@ -425,6 +543,21 @@ func isHostnameSuffix(entry string) bool {
 
 func isLowerHex64(s string) bool {
 	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// isGitCommitID reports whether s is a full git object id: 40 lowercase
+// hex characters (SHA-1) or 64 (SHA-256). Abbreviated ids and mutable
+// refs are refused — a build pins THE commit.
+func isGitCommitID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
 		return false
 	}
 	for _, c := range s {
