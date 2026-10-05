@@ -154,6 +154,13 @@ func TestBuildClassSourceRefGrammar(t *testing.T) {
 	})
 }
 
+// TestBuildClassCredentialReferencesOnly pins the grammar half of the
+// credential-reference law. The ORG BINDING is dispatch-side, by
+// recorded decision (epic 164 entry 4 review): the wire grammar stays
+// org-agnostic — it cannot know the caller — and the dispatcher
+// (web/backend services/builder) refuses any reference whose namespace
+// segment is not the calling org. A contract test asserts the grammar
+// only; the scope assertion lives in the dispatcher's suite.
 func TestBuildClassCredentialReferencesOnly(t *testing.T) {
 	for _, field := range []string{"build.source_pull_credential", "build.registry_push_credential"} {
 		t.Run(field, func(t *testing.T) {
