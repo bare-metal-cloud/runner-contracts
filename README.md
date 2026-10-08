@@ -2,10 +2,11 @@
 
 The neutral, signed job-spec wire contract for BMC runners: the job-spec
 schema, its validation battery, the canonical JSON encoding, Ed25519
-signing and verification, and the typed reason vocabulary. One schema,
-many consumers: the engine signs job specs, the agent job-handler
-verifies and executes them, and the Pool Manager verifies and admits
-them.
+signing and verification, the typed reason vocabulary, and the build
+cancel verb (the signed directive that stops a running attempt). One
+schema, many consumers: the engine signs job specs, the agent
+job-handler verifies and executes them, and the Pool Manager verifies
+and admits them.
 
 The module has zero dependencies (Go standard library only) and imports
 nothing private, so it is safe to publish and safe to vendor into any
@@ -104,7 +105,7 @@ here), never on message text.
 
 ## The reason vocabulary
 
-Refusals and failures speak a fixed nine-class vocabulary, and each
+Refusals and failures speak a fixed ten-class vocabulary, and each
 class maps to the engine disposition it dictates (`DispositionFor`):
 
 | Class                | Disposition      | Meaning                                                    |
@@ -118,8 +119,28 @@ class maps to the engine disposition it dictates (`DispositionFor`):
 | `disk_pressure`      | `hard_fail`      | The job exceeded its own declared disk cap.                |
 | `customer_config`    | `hard_fail`      | A customer-side configuration failure (no fallback).       |
 | `customer_capability`| `fallback`       | The platform removed the capability, not the customer.     |
+| `cancelled`          | `cancelled`      | The job was stopped by an authenticated cancel directive.  |
 
 Every reason carries a required human message (`Reason.Validate`).
+
+## The cancel verb
+
+`CancelSpec` is the signed directive that stops a running attempt: the
+job's identity (`job_id`, `run_reference`, `attempt` — the job-spec's
+own idempotency key) plus the cancellation's `Reason`. The directive
+rides the same discipline as the job spec — canonical JSON, a detached
+Ed25519 signature made with the SAME engine key that signs job specs, a
+strict decoder, and validate-then-sign / validate-then-accept laws:
+
+```go
+sig, err := contracts.SignCancel(engineKey, cancelSpec)   // refuses an invalid directive
+err = contracts.VerifyCancel(publicKey, doc, sig)         // canonical bytes + signature + battery
+directive, err := contracts.DecodeCancelSpec(doc)         // strict decode, unknown fields refused
+```
+
+The executor matches the directive's identity against the attempt it is
+running; a directive for a job that is not executing is a benign
+no-op — the verb is idempotent.
 
 ## Compatibility
 
