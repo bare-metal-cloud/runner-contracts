@@ -86,6 +86,18 @@ func ValidateCancel(c CancelSpec) ValidationErrors {
 			errs = append(errs, ValidationError{Field: "reason", Rule: RuleReasonClass, Message: err.Error()})
 		}
 	}
+	// The message cap is the cancel battery's own: the directive's
+	// message travels into the cancelled attempt's ledger row verbatim,
+	// so its size is bounded here at signing and re-checked at
+	// verification (ValidateCancel runs on both sides).
+	if len(c.Reason.Message) > MaxReasonMessageLength {
+		errs = append(errs, ValidationError{
+			Field: "reason.message",
+			Rule:  RuleReasonMessage,
+			Message: fmt.Sprintf("reason message is %d characters, at most %d are allowed (the message rides the ledger's failure reason verbatim)",
+				len(c.Reason.Message), MaxReasonMessageLength),
+		})
+	}
 	return errs
 }
 

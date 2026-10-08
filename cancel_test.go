@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	contracts "github.com/bare-metal-cloud/runner-contracts"
@@ -61,6 +62,9 @@ func TestCancelSpecValidationBattery(t *testing.T) {
 		"empty reason class":   func(c *contracts.CancelSpec) { c.Reason.Class = "" },
 		"unknown reason class": func(c *contracts.CancelSpec) { c.Reason.Class = "mystery" },
 		"empty reason message": func(c *contracts.CancelSpec) { c.Reason.Message = "" },
+		"oversized reason message": func(c *contracts.CancelSpec) {
+			c.Reason.Message = strings.Repeat("x", contracts.MaxReasonMessageLength+1)
+		},
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -71,6 +75,26 @@ func TestCancelSpecValidationBattery(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCancelReasonMessageCapped pins the cancel battery's message cap:
+// the directive's message rides the ledger's failure reason verbatim,
+// so an uncapped one could carry megabytes of noise into every
+// cancelled row. The cap sits at MaxReasonMessageLength (inclusive);
+// one byte over is refused, with the rule named.
+func TestCancelReasonMessageCapped(t *testing.T) {
+	spec := validCancelSpec()
+	spec.Reason.Message = strings.Repeat("x", contracts.MaxReasonMessageLength)
+	if errs := contracts.ValidateCancel(spec); len(errs) != 0 {
+		t.Fatalf("a message at the cap was refused: %v", errs)
+	}
+
+	spec.Reason.Message = strings.Repeat("x", contracts.MaxReasonMessageLength+1)
+	errs := contracts.ValidateCancel(spec)
+	if len(errs) == 0 {
+		t.Fatal("the battery accepted a message one byte over the cap")
+	}
+	assertRule(t, errs, contracts.RuleReasonMessage, "an oversized message must surface as reason_message")
 }
 
 // TestSignCancelRoundTrip: the engine signs the directive, the machine
