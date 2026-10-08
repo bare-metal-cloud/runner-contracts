@@ -128,4 +128,14 @@ const (
 	MaxPlanRowLength = 512
 	// MaxLogTopicIDLength bounds the build-log channel identifier.
 	MaxLogTopicIDLength = 256
+	// MaxReasonMessageLength bounds a cancel directive's reason message
+	// in the cancel battery: the message rides the cancelled attempt's
+	// ledger row verbatim, so an uncapped one could carry ~1MiB of
+	// noise into every cancelled row. Consistent with the schema's
+	// other human-text bounds (run_reference, plan rows, metering tag
+	// values). The shared Reason.Validate stays presence-only — engine-
+	// and pool-composed refusal reasons are platform-authored, and
+	// widening the cap to them is a deliberate, separately-reviewed
+	// wire change if ever wanted.
+	MaxReasonMessageLength = 256
 )

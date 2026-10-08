@@ -183,6 +183,86 @@ func TestGoldenWireFixtures(t *testing.T) {
 	}
 }
 
+// goldenCancelFixtures maps fixture names to the cancel directives they
+// pin.
+func goldenCancelFixtures() map[string]contracts.CancelSpec {
+	return map[string]contracts.CancelSpec{
+		"cancel-verb": validCancelSpec(),
+	}
+}
+
+// TestGoldenCancelVerbFixtures pins the cancel verb's wire contract with
+// the same three laws as the job-spec fixtures: the pinned bytes are the
+// canonical encoding, the pinned signature is the deterministic Ed25519
+// signature of the pinned test key over those bytes, and the document
+// verifies and decodes back to identical content.
+func TestGoldenCancelVerbFixtures(t *testing.T) {
+	key := loadTestEngineKey(t)
+	pub := key.Public().(ed25519.PublicKey)
+
+	for name, spec := range goldenCancelFixtures() {
+		t.Run(name, func(t *testing.T) {
+			jsonPath := filepath.Join("testdata", "golden", name+".json")
+			sigPath := filepath.Join("testdata", "golden", name+".sig")
+
+			canonical, err := contracts.CanonicalCancelJSON(spec)
+			if err != nil {
+				t.Fatalf("CanonicalCancelJSON: %v", err)
+			}
+			sig, err := contracts.SignCancel(key, spec)
+			if err != nil {
+				t.Fatalf("SignCancel: %v", err)
+			}
+
+			if *updateGolden {
+				if err := os.WriteFile(jsonPath, canonical, 0o644); err != nil {
+					t.Fatalf("write fixture: %v", err)
+				}
+				encoded := base64.StdEncoding.EncodeToString(sig) + "\n"
+				if err := os.WriteFile(sigPath, []byte(encoded), 0o644); err != nil {
+					t.Fatalf("write signature: %v", err)
+				}
+				return
+			}
+
+			pinned, err := os.ReadFile(jsonPath)
+			if err != nil {
+				t.Fatalf("read pinned fixture (run with -update-golden after a deliberate wire change): %v", err)
+			}
+			if !bytes.Equal(canonical, pinned) {
+				t.Fatalf("canonical encoding drifted from the pinned fixture:\n pinned: %s\n current: %s", pinned, canonical)
+			}
+
+			raw, err := os.ReadFile(sigPath)
+			if err != nil {
+				t.Fatalf("read pinned signature: %v", err)
+			}
+			pinnedSig, err := base64.StdEncoding.DecodeString(string(bytes.TrimSpace(raw)))
+			if err != nil {
+				t.Fatalf("pinned signature is not base64: %v", err)
+			}
+			if !bytes.Equal(sig, pinnedSig) {
+				t.Fatalf("signature over the pinned document changed (key or canonical form drifted)")
+			}
+
+			if err := contracts.VerifyCancel(pub, pinned, pinnedSig); err != nil {
+				t.Fatalf("pinned fixture no longer verifies: %v", err)
+			}
+			decoded, err := contracts.DecodeCancelSpec(pinned)
+			if err != nil {
+				t.Fatalf("pinned fixture no longer decodes: %v", err)
+			}
+			recanonical, err := contracts.CanonicalCancelJSON(decoded)
+			if err != nil {
+				t.Fatalf("CanonicalCancelJSON: %v", err)
+			}
+			if !bytes.Equal(recanonical, pinned) {
+				t.Fatalf("decoded fixture re-encodes differently:\n pinned: %s\n decoded: %s", pinned, recanonical)
+			}
+		})
+	}
+}
+
 // TestReorderedJSONDecodesToIdenticalSpec proves the decode half of the
 // wire contract: a document whose JSON keys appear in a different order
 // (for example produced by a non-Go consumer) decodes to a spec whose

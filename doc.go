@@ -1,7 +1,8 @@
 // Package contracts holds the neutral, signed job-spec wire contract
 // for BMC runners: the job-spec schema, its validation battery, the
-// canonical JSON encoding, Ed25519 signing and verification, and the
-// typed reason vocabulary with its class-to-disposition map.
+// canonical JSON encoding, Ed25519 signing and verification, the typed
+// reason vocabulary with its class-to-disposition map, and the build
+// cancel verb (the signed directive that stops a running attempt).
 //
 // The module is open-source-safe by construction: it imports nothing
 // private (a CI guard refuses any bare-metal-cloud module path other

@@ -17,6 +17,8 @@ type ReasonClass string
 //	disk_pressure     — the job exceeded its disk cap
 //	customer_config   — a customer-side configuration failure
 //	customer_capability — the platform removed the capability
+//	cancelled         — the job was stopped by an authenticated cancel
+//	                    directive (the build cancel verb)
 const (
 	ReasonQuota              ReasonClass = "quota"
 	ReasonMinutesCeiling     ReasonClass = "minutes_ceiling"
@@ -27,6 +29,7 @@ const (
 	ReasonDiskPressure       ReasonClass = "disk_pressure"
 	ReasonCustomerConfig     ReasonClass = "customer_config"
 	ReasonCustomerCapability ReasonClass = "customer_capability"
+	ReasonCancelled          ReasonClass = "cancelled"
 )
 
 // Reason is a refusal or failure with its human message.
@@ -54,7 +57,7 @@ func isReasonClass(c ReasonClass) bool {
 	switch c {
 	case ReasonQuota, ReasonMinutesCeiling, ReasonGate, ReasonNoCapacity,
 		ReasonDispatchFailure, ReasonPlatformTimeout, ReasonDiskPressure,
-		ReasonCustomerConfig, ReasonCustomerCapability:
+		ReasonCustomerConfig, ReasonCustomerCapability, ReasonCancelled:
 		return true
 	}
 	return false
@@ -79,6 +82,13 @@ const (
 	// DispositionHardFail means the run fails with no fallback: the
 	// job does not silently reroute to Tier P.
 	DispositionHardFail Disposition = "hard_fail"
+
+	// DispositionCancelled means the stop was the requester's own
+	// choice, delivered by an authenticated cancel directive: the
+	// engine does not fall back, and the terminal renders as the
+	// user's cancellation — never a platform fault, never a customer
+	// failure.
+	DispositionCancelled Disposition = "cancelled"
 )
 
 // DispositionFor maps a reason class to the engine behavior it
@@ -107,6 +117,10 @@ const (
 //	  succeed on Tier P until fixed; disk pressure means the job
 //	  exceeded its own declared cap.
 //
+//	- CANCELLED — cancelled: the stop was the requester's own choice
+//	  (an authenticated cancel directive), so no fallback posture
+//	  applies and the terminal renders as the user's cancellation.
+//
 //	  The gate class also falls back: a gated feature refusal means
 //	  hosted execution is unavailable for the (org, project), and the
 //	  customer's pipeline still runs on its existing tiers. (The
@@ -122,6 +136,8 @@ func DispositionFor(class ReasonClass) (Disposition, bool) {
 		return DispositionPlatformFault, true
 	case ReasonMinutesCeiling, ReasonCustomerConfig, ReasonDiskPressure:
 		return DispositionHardFail, true
+	case ReasonCancelled:
+		return DispositionCancelled, true
 	}
 	return "", false
 }
