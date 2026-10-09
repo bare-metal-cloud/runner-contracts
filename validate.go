@@ -12,10 +12,17 @@ import (
 var (
 	// ociRepositoryRe matches a bare OCI repository path: lowercase
 	// path components of alphanumerics and the optional separators
-	// (dot, underscore, hyphen), joined by slashes. It deliberately
-	// refuses a tag or a digest — those make a reference mutable or
-	// are validated separately.
-	ociRepositoryRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)*$`)
+	// (dot, underscore, hyphen), joined by slashes — optionally
+	// ANCHORED at a registry host[:port] (the distribution reference
+	// grammar's own domain rule: the component before the first slash
+	// may carry a ":port"). The anchor exists for the 2026-10-08
+	// drill's composed push target — the platform composes the
+	// declared registry row's URL host (with port) onto a bare push
+	// repository ("169.58.14.139:5000/drill01"). The port REQUIRES a
+	// following path component ("169.58.14.139:5000" alone is still
+	// refused), and a tag or a digest still is: those make a
+	// reference mutable or are validated separately.
+	ociRepositoryRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?/)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)*$`)
 
 	// hostnameSuffixRe matches a lowercase hostname with at least two
 	// labels (the egress allowlist speaks hostname suffixes; a bare

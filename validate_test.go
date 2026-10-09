@@ -561,6 +561,33 @@ func TestArtifactOutputValidation(t *testing.T) {
 		spec.ArtifactOutputs[0].Repository = "registry.acme.example/payments/app@sha256:" + sha256hex("ab")
 		wantRule(t, validate(t, spec), contracts.RuleOCIRepository, "artifact_outputs[0].repository")
 	})
+	t.Run("host:port anchor composes (the 2026-10-08 drill's push target)", func(t *testing.T) {
+		// The platform composes the declared registry row's URL host
+		// (with port) onto a bare push repository; the battery accepts
+		// the composed form the machine's driver then pushes.
+		spec := validFullSpec()
+		spec.ArtifactOutputs[0].Repository = "169.58.14.139:5000/drill01"
+		if got := validate(t, spec); len(got) != 0 {
+			t.Fatalf("the composed host:port/repository push target must validate, got: %v", got)
+		}
+	})
+	t.Run("host anchor without a port composes", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactOutputs[0].Repository = "169.58.14.139/drill01"
+		if got := validate(t, spec); len(got) != 0 {
+			t.Fatalf("the host/repository push target must validate, got: %v", got)
+		}
+	})
+	t.Run("port without a repository path is refused", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactOutputs[0].Repository = "169.58.14.139:5000"
+		wantRule(t, validate(t, spec), contracts.RuleOCIRepository, "artifact_outputs[0].repository")
+	})
+	t.Run("a tag after the host segment is refused", func(t *testing.T) {
+		spec := validFullSpec()
+		spec.ArtifactOutputs[0].Repository = "registry.acme.example/payments/app:latest/drill01"
+		wantRule(t, validate(t, spec), contracts.RuleOCIRepository, "artifact_outputs[0].repository")
+	})
 	t.Run("bad output tag", func(t *testing.T) {
 		spec := validFullSpec()
 		spec.ArtifactOutputs[0].Tags = []string{"-leading-hyphen"}
