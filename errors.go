@@ -75,6 +75,9 @@ const (
 	RuleBuildPort         = "build_port"
 	RuleBuildCredRef      = "build_credential_reference" //nolint:gosec // rule identifier, not a credential
 	RuleLogTopic          = "log_topic_id"
+	RuleLabelName         = "label_name"
+	RuleLabelCount        = "label_count"
+	RuleLabelDuplicate    = "label_duplicate"
 	RuleDocumentSize      = "document_size"
 	RuleNotCanonical      = "not_canonical"
 	RuleSignatureInvalid  = "signature_invalid"
@@ -138,4 +141,12 @@ const (
 	// widening the cap to them is a deliberate, separately-reviewed
 	// wire change if ever wanted.
 	MaxReasonMessageLength = 256
+	// MaxLabelRequirements bounds the job's machine-label requirements
+	// list (AAR.3 item 7): placement intersects every entry with each
+	// candidate machine's labels, so the list is small by construction.
+	MaxLabelRequirements = 8
+	// MaxLabelLength bounds each label requirement. Labels are machine
+	// capability identifiers (docker, microvm) in the same grammar shape
+	// as service names.
+	MaxLabelLength = 63
 )

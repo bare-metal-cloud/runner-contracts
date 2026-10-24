@@ -80,6 +80,17 @@ type JobSpec struct {
 	// enforced at the container/network level on the runner VM.
 	EgressAllowlist []string `json:"egress_allowlist"`
 
+	// LabelRequirements names the machine labels every candidate
+	// machine must carry for this job to be placed on it (AND
+	// semantics: the requirements intersect the machine's label set —
+	// design §3.6; the Forgejo runs-on mapping's destination, Epic
+	// 136). A job with no requirements places on any machine that
+	// passes the class fit. Labels are lowercase capability
+	// identifiers (docker, microvm); whether a machine's label is
+	// VERIFIED is the platform's call (CP-authored label probes), never
+	// this field's.
+	LabelRequirements []string `json:"label_requirements,omitempty"`
+
 	// MeteringTags are key/value pairs attached to the job's metering
 	// events. Keys are constrained ([a-z0-9_-], max length) and the
 	// count is bounded.
