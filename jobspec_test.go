@@ -362,3 +362,111 @@ func TestEnvEntryWireForms(t *testing.T) {
 		t.Fatalf("empty plain value degraded: %+v", decoded.Env[0])
 	}
 }
+
+// TestLabelRequirementsRoundTrip pins the label-requirements data path
+// (AAR.3 item 7, design §3.6): the requirements ride the signed document,
+// survive the canonical round trip, and omit cleanly when absent — a spec
+// without labels canonicalizes to exactly the bytes it did before the
+// field existed, so old signatures stay verifiable.
+func TestLabelRequirementsRoundTrip(t *testing.T) {
+	spec := validMinimalSpec()
+	spec.LabelRequirements = []string{"docker", "microvm"}
+	doc, err := contracts.CanonicalJSON(spec)
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	decoded, err := contracts.DecodeJobSpec(doc)
+	if err != nil {
+		t.Fatalf("DecodeJobSpec: %v", err)
+	}
+	if !reflect.DeepEqual(spec.LabelRequirements, decoded.LabelRequirements) {
+		t.Fatalf("label requirements did not round-trip:\n want %v\n got  %v", spec.LabelRequirements, decoded.LabelRequirements)
+	}
+	if errs := contracts.Validate(decoded); len(errs) != 0 {
+		t.Fatalf("a spec with valid label requirements does not validate: %v", errs)
+	}
+
+	// The minimal spec (no labels) canonicalizes without the field.
+	bare, err := contracts.CanonicalJSON(validMinimalSpec())
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	if bytes.Contains(bare, []byte("label_requirements")) {
+		t.Fatalf("an absent label-requirements list leaked into the canonical form: %s", bare)
+	}
+}
+
+// TestLabelRequirementsGrammar pins the label battery: a bounded list of
+// unique lowercase identifiers. The grammar is deliberately the same
+// shape as service names — a wire identifier only gets stricter, never
+// looser — and duplicates are refused exactly as env and service names
+// are.
+func TestLabelRequirementsGrammar(t *testing.T) {
+	cases := []struct {
+		name  string
+		label string
+	}{
+		{"uppercase", "Docker"},
+		{"whitespace", "doc ker"},
+		{"leading hyphen", "-docker"},
+		{"trailing hyphen", "docker-"},
+		{"empty", ""},
+		{"slash", "arch/arm64"},
+	}
+	for _, tc := range cases {
+		spec := validMinimalSpec()
+		spec.LabelRequirements = []string{tc.label}
+		errs := contracts.Validate(spec)
+		var found bool
+		for _, e := range errs {
+			if e.Rule == contracts.RuleLabelName {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s: label %q produced %v, want a %s finding", tc.name, tc.label, errs, contracts.RuleLabelName)
+		}
+	}
+
+	// Too long.
+	spec := validMinimalSpec()
+	spec.LabelRequirements = []string{strings.Repeat("a", contracts.MaxLabelLength+1)}
+	var foundLen bool
+	for _, e := range contracts.Validate(spec) {
+		if e.Rule == contracts.RuleLabelName {
+			foundLen = true
+		}
+	}
+	if !foundLen {
+		t.Fatalf("an over-length label produced %v, want a %s finding", contracts.Validate(spec), contracts.RuleLabelName)
+	}
+
+	// Duplicates.
+	spec = validMinimalSpec()
+	spec.LabelRequirements = []string{"docker", "docker"}
+	var foundDup bool
+	for _, e := range contracts.Validate(spec) {
+		if e.Rule == contracts.RuleLabelDuplicate {
+			foundDup = true
+		}
+	}
+	if !foundDup {
+		t.Fatalf("duplicate labels produced %v, want a %s finding", contracts.Validate(spec), contracts.RuleLabelDuplicate)
+	}
+
+	// Count bound.
+	spec = validMinimalSpec()
+	spec.LabelRequirements = make([]string, contracts.MaxLabelRequirements+1)
+	for i := range spec.LabelRequirements {
+		spec.LabelRequirements[i] = fmt.Sprintf("label-%02d", i)
+	}
+	var foundCount bool
+	for _, e := range contracts.Validate(spec) {
+		if e.Rule == contracts.RuleLabelCount {
+			foundCount = true
+		}
+	}
+	if !foundCount {
+		t.Fatalf("an over-count label list produced %v, want a %s finding", contracts.Validate(spec), contracts.RuleLabelCount)
+	}
+}

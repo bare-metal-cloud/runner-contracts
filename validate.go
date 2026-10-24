@@ -41,6 +41,11 @@ var (
 	// tagKeyRe matches a metering tag key.
 	tagKeyRe = regexp.MustCompile(`^[a-z0-9_-]+$`)
 
+	// labelRe matches a machine-label requirement: lowercase
+	// alphanumerics with inner hyphens (docker, microvm) — the same
+	// grammar shape as service names.
+	labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
 	// outputTagRe matches an OCI distribution tag (applied at push
 	// time on artifact outputs, never used to pull).
 	outputTagRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
@@ -326,6 +331,34 @@ func Validate(spec JobSpec) ValidationErrors {
 				Message: fmt.Sprintf("egress allowlist entry %q must be a lowercase hostname suffix of at least two labels (no scheme, path, or wildcard); an empty allowlist is legal and means deny-all", entry),
 			})
 		}
+	}
+	// Label requirements: a bounded list of unique lowercase identifiers.
+	// Placement intersects every entry with each candidate machine's
+	// labels, so a duplicate or malformed entry is refused here rather
+	// than silently widening or narrowing the candidate set later.
+	if len(spec.LabelRequirements) > MaxLabelRequirements {
+		add(countError("label_requirements", len(spec.LabelRequirements), MaxLabelRequirements, RuleLabelCount, "label requirements"))
+	}
+	seenLabels := make(map[string]bool, len(spec.LabelRequirements))
+	for i, label := range spec.LabelRequirements {
+		field := fmt.Sprintf("label_requirements[%d]", i)
+		switch {
+		case label == "" || len(label) > MaxLabelLength || !labelRe.MatchString(label):
+			add(ValidationError{
+				Field: field,
+				Rule:  RuleLabelName,
+				Message: fmt.Sprintf("label requirement %q must be at most %d lowercase letters, digits, and inner hyphens",
+					label, MaxLabelLength),
+			})
+		case seenLabels[label]:
+			add(ValidationError{
+				Field: field,
+				Rule:  RuleLabelDuplicate,
+				Message: fmt.Sprintf("label requirement %q is already required by an earlier entry in this job",
+					label),
+			})
+		}
+		seenLabels[label] = true
 	}
 	if len(spec.MeteringTags) > MaxMeteringTags {
 		add(countError("metering_tags", len(spec.MeteringTags), MaxMeteringTags, RuleTagCount, "metering tags"))
