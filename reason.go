@@ -13,6 +13,9 @@ type ReasonClass string
 //	gate              — the hosted-runner feature gate is off
 //	no_capacity       — cold provisioning found no capacity
 //	dispatch_failure  — the pool could not deliver the job (platform fault)
+//	start_failure     — the machine EXECUTED the runner-start attempt and
+//	                    the start failed before a handoff (B3.8's executor
+//	                    leg: the machine's signed terminal named the cause)
 //	platform_timeout  — the CP watchdog breached (platform fault)
 //	disk_pressure     — the job exceeded its disk cap
 //	customer_config   — a customer-side configuration failure
@@ -25,6 +28,7 @@ const (
 	ReasonGate               ReasonClass = "gate"
 	ReasonNoCapacity         ReasonClass = "no_capacity"
 	ReasonDispatchFailure    ReasonClass = "dispatch_failure"
+	ReasonStartFailure       ReasonClass = "start_failure"
 	ReasonPlatformTimeout    ReasonClass = "platform_timeout"
 	ReasonDiskPressure       ReasonClass = "disk_pressure"
 	ReasonCustomerConfig     ReasonClass = "customer_config"
@@ -56,8 +60,9 @@ func (r Reason) Validate() error {
 func isReasonClass(c ReasonClass) bool {
 	switch c {
 	case ReasonQuota, ReasonMinutesCeiling, ReasonGate, ReasonNoCapacity,
-		ReasonDispatchFailure, ReasonPlatformTimeout, ReasonDiskPressure,
-		ReasonCustomerConfig, ReasonCustomerCapability, ReasonCancelled:
+		ReasonDispatchFailure, ReasonStartFailure, ReasonPlatformTimeout,
+		ReasonDiskPressure, ReasonCustomerConfig, ReasonCustomerCapability,
+		ReasonCancelled:
 		return true
 	}
 	return false
@@ -96,12 +101,21 @@ const (
 //
 //	Dispositions of record (the fold from the Tier H review loops):
 //
-//	- FALLBACK — no_capacity, quota, dispatch_failure,
+//	- FALLBACK — no_capacity, quota, dispatch_failure, start_failure,
 //	  customer_capability: the engine falls back to Tier P.
 //	  Dispatch-failure additionally renders as a platform-fault ledger
 //	  fact (the pool could not deliver; that is never the customer's
 //	  failure). Capability refusals fall back because the platform
-//	  removed the capability, not the customer.
+//	  removed the capability, not the customer. Start-failure falls back
+//	  the same way: the machine executed the runner-start attempt and the
+//	  start failed before a handoff (B3.8's executor leg, backend
+//	  2026-11-03) — the delivery chain's machine arm failed, never a
+//	  customer-class failure, and the workflow job stays with GitHub's
+//	  own lifecycle (another runner may take it; GitHub's queue timeout
+//	  is the backstop). The class is kept DISTINCT from dispatch_failure
+//	  so the joined-row close (backend joiner.go's custody gate) can name
+//	  the executed-and-failed end the machine's signed terminal proved,
+//	  where a pool-side dispatch failure never reached the machine.
 //
 //	- PLATFORM-FAULT — platform_timeout: the CP watchdog breached the
 //	  heartbeat deadline or the platform maximum wall-clock, or drift
@@ -130,7 +144,7 @@ const (
 func DispositionFor(class ReasonClass) (Disposition, bool) {
 	switch class {
 	case ReasonNoCapacity, ReasonQuota, ReasonDispatchFailure,
-		ReasonCustomerCapability, ReasonGate:
+		ReasonStartFailure, ReasonCustomerCapability, ReasonGate:
 		return DispositionFallback, true
 	case ReasonPlatformTimeout:
 		return DispositionPlatformFault, true
