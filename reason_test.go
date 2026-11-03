@@ -15,14 +15,15 @@ func TestReasonVocabularyValues(t *testing.T) {
 		contracts.ReasonGate:               contracts.DispositionFallback,
 		contracts.ReasonNoCapacity:         contracts.DispositionFallback,
 		contracts.ReasonDispatchFailure:    contracts.DispositionFallback,
+		contracts.ReasonStartFailure:       contracts.DispositionFallback,
 		contracts.ReasonPlatformTimeout:    contracts.DispositionPlatformFault,
 		contracts.ReasonDiskPressure:       contracts.DispositionHardFail,
 		contracts.ReasonCustomerConfig:     contracts.DispositionHardFail,
 		contracts.ReasonCustomerCapability: contracts.DispositionFallback,
 		contracts.ReasonCancelled:          contracts.DispositionCancelled,
 	}
-	if len(want) != 10 {
-		t.Fatalf("vocabulary is %d classes, want 10", len(want))
+	if len(want) != 11 {
+		t.Fatalf("vocabulary is %d classes, want 11", len(want))
 	}
 	for class, disposition := range want {
 		got, ok := contracts.DispositionFor(class)
