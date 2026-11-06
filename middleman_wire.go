@@ -301,11 +301,17 @@ func CanonicalMiddlemanJSON(doc any) ([]byte, error) {
 
 // The strict decoders, one per wire document. Each applies the module's
 // document law: size-bounded before any parsing, only fields the schema
-// knows (named by the unknown_field rule, case-sensitively, each at
-// most once), well-formed JSON, and nothing trailing the value. A
-// document carrying an unknown field — which is how custody material
-// such as a signing seed would have to ride the wire — is refused by
-// name.
+// knows (named by the unknown_field rule; at the document's top level
+// the keys are matched case-sensitively and each must appear exactly
+// once), well-formed JSON, and nothing trailing the value. A document
+// carrying an unknown field — which is how custody material such as a
+// signing seed would have to ride the wire — is refused by name.
+//
+// The case-sensitive, exactly-once key refusal is a TOP-level
+// guarantee. Inside a nested document (a delivery inside a
+// prepare-request, an artifact inside the delivery) duplicate or
+// case-variant keys are not scanned: they fall through to
+// encoding/json's usual case-insensitive, last-occurrence-wins decode.
 
 func DecodePrepareRequest(doc []byte) (PrepareRequest, error) {
 	var r PrepareRequest
@@ -398,7 +404,11 @@ var (
 
 // decodeMiddlemanDocument is DecodeJobSpec's exact document law applied
 // to a middleman wire document: the size bound, the exact-key top-level
-// scan, the strict struct decode, and the nothing-trailing check.
+// scan, the strict struct decode, and the nothing-trailing check. The
+// exact-key scan is a TOP-level guarantee: duplicate or case-variant
+// keys nested inside a payload value (a delivery's own fields, say) are
+// not scanned and fall through to encoding/json's case-insensitive,
+// last-occurrence-wins decode.
 func decodeMiddlemanDocument(doc []byte, fieldNames map[string]bool, what string, v any) error {
 	if len(doc) > MaxDocumentBytes {
 		return ValidationErrors{{
