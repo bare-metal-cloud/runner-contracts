@@ -1,0 +1,1 @@
+{"reply":{"op":"prepare","op_id":"op-prepare-0002","ok":false,"refusal":{"name":"busy","message":"a machine-state-mutating op is already in flight; concurrent mutating ops are refused, not queued","detail":"prepare"}}}

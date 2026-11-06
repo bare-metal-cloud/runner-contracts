@@ -4,6 +4,18 @@
 // reason vocabulary with its class-to-disposition map, and the build
 // cancel verb (the signed directive that stops a running attempt).
 //
+// It also holds the machine-side middleman protocol — the both-import
+// wire the machine's agent and the runnermand daemon share over their
+// local unix socket: the six-op interface and its request/reply
+// envelopes (middleman.go, middleman_wire.go), the connect-time
+// version handshake with its exact-match law and loud refusal document
+// (handshake.go), the typed refusal vocabulary (refusal.go), and the
+// golden wire fixtures the compat battery pins
+// (testdata/golden/middleman). The custody law shapes the protocol's
+// wire from day one: the signing seed is never a wire field, the
+// registration token crosses only at install inside the named
+// fresh-token field, one shot per delivery attempt.
+//
 // The module is open-source-safe by construction: it imports nothing
 // private (a CI guard refuses any bare-metal-cloud module path other
 // than this module itself), carries the Apache-2.0 publish kit from day

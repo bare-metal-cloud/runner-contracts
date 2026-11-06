@@ -1,0 +1,1 @@
+{"name":"unknown-op","message":"the request's op is not in the protocol's op set; the daemon's authority is scoped to exactly the six verbs","detail":"exec_shell"}

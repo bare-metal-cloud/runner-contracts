@@ -1,0 +1,1 @@
+{"reply":{"op":"run_clean_cycle","op_id":"op-clean-0001","ok":true},"receipt":{"cycle_id":"op-clean-0001","scrubbed":[{"kind":"container","ref":"bmc-runner-run-420"},{"kind":"stage","ref":"/var/lib/runnermand/stages/op-prepare-0001"}],"at_unix_ms":1793966445000}}

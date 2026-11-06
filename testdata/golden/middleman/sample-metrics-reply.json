@@ -1,0 +1,1 @@
+{"reply":{"op":"sample_metrics","op_id":"op-metrics-0001","ok":true},"metrics":{"window":{"from_unix_ms":1793966400000,"to_unix_ms":1793966460000},"samples":[{"runner":"handle-0001","slice":"slice-01","cpu_millicores":2400,"memory_bytes":3221225472,"disk_bytes":12884901888,"at_unix_ms":1793966430000}]}}

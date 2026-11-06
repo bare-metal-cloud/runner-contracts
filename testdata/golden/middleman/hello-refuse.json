@@ -1,0 +1,1 @@
+{"accepted":false,"protocol_version":2,"refusal":{"agent_protocol_version":1,"daemon_protocol_version":2,"expected":"agent_protocol_version == daemon_protocol_version (protocol v1 is exact-match-only: no compatible-range negotiation)","message":"protocol versions differ: the agent announces 1, the daemon implements 2; update the stale side before any op flows"}}
