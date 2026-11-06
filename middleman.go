@@ -137,6 +137,14 @@ type Delivery struct {
 	// StartRender is the ONE validated start render, composed
 	// control-plane-side. The daemon executes it as delivered; no
 	// second render exists anywhere on the machine.
+	//
+	// The v1 forge-URL convention rides inside the delivered render as
+	// a header line: `# runnermand:forge-url=<https-url>`. It is
+	// fail-closed — a render whose forge-url line is absent, or whose
+	// URL is not https, refuses the install rather than falling back to
+	// any machine-local default. The convention is named here because
+	// v1 carries it in the render's body; a later contracts version may
+	// type it as a real field of this document instead.
 	StartRender string `json:"start_render"`
 
 	// FreshRegistrationToken is the attempt's registration token. It
