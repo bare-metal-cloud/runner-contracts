@@ -10,15 +10,17 @@ import (
 )
 
 // DecodeJobSpec decodes a job-spec document strictly. The document must
-// be well-formed JSON, carry only fields the schema knows, and carry
-// each known field at most once. Concretely, the decoder refuses:
+// be well-formed JSON and carry only fields the schema knows; each
+// schema key must appear exactly once at every nesting level, and the
+// top-level keys must match the schema exactly, case-sensitively.
+// Concretely, the decoder refuses:
 //
 //   - a document larger than MaxDocumentBytes (the document_size rule,
 //     checked before any parsing bounds the work a hostile document can
 //     force),
-//   - an unknown field, named, by the unknown_field rule. Keys are
-//     matched case-SENSITIVELY against the schema's exact tag set: the
-//     stdlib's struct decode folds "JOB_ID" into job_id by its
+//   - an unknown field, named, by the unknown_field rule. Top-level
+//     keys are matched case-SENSITIVELY against the schema's exact tag
+//     set: the stdlib's struct decode folds "JOB_ID" into job_id by its
 //     case-insensitive match, and a case-variant key almost always means
 //     the sender meant something the receiver would silently move,
 //   - a duplicated key at ANY nesting level (the stdlib decode would
@@ -72,9 +74,11 @@ func DecodeJobSpec(doc []byte) (JobSpec, error) {
 
 // DecodeCancelSpec decodes a cancel-directive document strictly, with
 // DecodeJobSpec's exact law: the document must be well-formed JSON,
-// carry only fields the schema knows, carry each known field at most
-// once, and stay inside MaxDocumentBytes. The returned error is a typed
-// ValidationErrors (RuleMalformed, RuleUnknownField, or
+// carry only fields the schema knows, carry each schema key exactly
+// once at every nesting level, and stay inside MaxDocumentBytes (the
+// duplicate-key refusal is a walk over the whole document — see
+// DecodeJobSpec and checkDocumentKeys). The returned
+// error is a typed ValidationErrors (RuleMalformed, RuleUnknownField, or
 // RuleDocumentSize).
 func DecodeCancelSpec(doc []byte) (CancelSpec, error) {
 	if len(doc) > MaxDocumentBytes {
