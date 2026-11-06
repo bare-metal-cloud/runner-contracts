@@ -3,6 +3,7 @@ package contracts
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ValidationError is one typed, machine-readable validation finding.
@@ -83,6 +84,31 @@ const (
 	RuleSignatureInvalid  = "signature_invalid"
 	RuleReasonClass       = "reason_class"
 	RuleReasonMessage     = "reason_message"
+
+	// The machine-side middleman protocol's rule identifiers (the
+	// socket wire's validation battery). Consumers match on these,
+	// never on message text.
+	RuleOpName            = "op_name"
+	RuleOpID              = "op_id"
+	RuleDeadline          = "deadline"
+	RuleHealthDeadline    = "health_deadline"
+	RuleRefusalName       = "refusal_name"
+	RuleRefusalMessage    = "refusal_message"
+	RuleRefusalShape      = "refusal_shape"
+	RuleDeliveryAttempt   = "delivery_attempt"
+	RuleRegistrationToken = "registration_token" //nolint:gosec // rule identifier, not a credential
+	RuleDigestPin         = "digest_pin"
+	RuleForge             = "forge"
+	RuleDriftKind         = "drift_kind"
+	RuleCleanTargetKind   = "clean_target_kind"
+	RuleCleanTargetRef    = "clean_target_ref"
+	RuleCleanTargetCount  = "clean_target_count"
+	RuleMetricsWindow     = "metrics_window"
+	RuleMetricSampleCount = "metric_sample_count"
+	RuleSequence          = "sequence"
+	RuleMaskedStream      = "masked_stream"
+	RuleHandleID          = "handle_id"
+	RuleProtocolVersion   = "protocol_version"
 )
 
 // The schema's sanity bounds. They are admission sanity limits, not
@@ -149,4 +175,22 @@ const (
 	// capability identifiers (docker, microvm) in the same grammar shape
 	// as service names.
 	MaxLabelLength = 63
+
+	// MaxOpIDLength bounds the middleman protocol's op id (the op
+	// envelope's idempotency key; the same charset as the job id).
+	MaxOpIDLength = 128
+	// MaxRegistrationTokenLength bounds the delivery's fresh
+	// registration token — the one custody field the protocol carries,
+	// and bounded like every other human-composed field so a hostile
+	// delivery cannot bloat the document.
+	MaxRegistrationTokenLength = 512
+	// MaxDeliveryArtifacts bounds the delivery's artifact list (the
+	// artifact-input bound's shape).
+	MaxDeliveryArtifacts = 32
+	// MaxCleanTargets bounds one clean cycle's target list.
+	MaxCleanTargets = 64
+	// MaxMetricsWindow bounds one SampleMetrics window's span.
+	MaxMetricsWindow = 24 * time.Hour
+	// MaxMetricSamples bounds one metrics reply's sample list.
+	MaxMetricSamples = 1024
 )

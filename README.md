@@ -8,6 +8,15 @@ schema, many consumers: the engine signs job specs, the agent
 job-handler verifies and executes them, and the Pool Manager verifies
 and admits them.
 
+The module also carries the machine-side middleman protocol: the
+versioned wire contract the machine's agent and the runnermand daemon
+speak over their local unix socket, defined once here because both
+sides import it (the both-import law). It covers the six ops
+(Prepare, MachineFacts, RunCleanCycle, Health, SampleMetrics,
+TapConsole) with their request and reply envelopes, the connect-time
+version handshake, and the typed refusal vocabulary. See "The
+machine-side middleman protocol" below.
+
 The module has zero dependencies (Go standard library only) and imports
 nothing private, so it is safe to publish and safe to vendor into any
 consumer. Licensed under Apache-2.0.
@@ -141,6 +150,50 @@ directive, err := contracts.DecodeCancelSpec(doc)         // strict decode, unkn
 The executor matches the directive's identity against the attempt it is
 running; a directive for a job that is not executing is a benign
 no-op — the verb is idempotent.
+
+## The machine-side middleman protocol
+
+The agent and the runnermand daemon (the machine's supervised
+middleman binary) share their local unix socket protocol through this
+module: both import it, so the exact wire definitions exist once and
+neither side can drift its copy (the both-import law).
+
+The op set is six verbs — `Prepare`, `MachineFacts`, `RunCleanCycle`,
+`Health`, `SampleMetrics`, `TapConsole` — carried as request and reply
+documents (`middleman_wire.go`). Every request carries an `Envelope`
+(op name, op id, deadline) and every reply a `ReplyHeader` (echoed
+identity, accepted or the typed refusal). The laws the wire encodes:
+
+- **The custody law.** `Delivery` carries the verified payload only —
+  the start render, the digest pin, the artifacts. The completion
+  signing seed is never a field of any document (the strict decoder
+  refuses one by name). The registration token crosses only at
+  install, inside `fresh_registration_token`, one shot per delivery
+  attempt: a Prepare retry is the same delivery identity with
+  `delivery_attempt` advanced and a FRESH token.
+- **The deadline law.** Every envelope carries `deadline_unix_ms`;
+  the daemon answers `deadline-exceeded` by name rather than hanging.
+  Health's deadline is short by rule (`MaxHealthDeadline`, enforced by
+  the envelope battery), not by comment.
+- **The exact-match handshake.** On connect the agent announces the
+  protocol version it was built against (`ProtocolVersion`); the
+  daemon answers what it implements (`NegotiateHello`). Equal versions
+  accept; any other pair refuses loudly with BOTH versions and the
+  expected rule named (`HandshakeRefusal`). v1 negotiates no
+  compatible range.
+- **The typed refusals.** `busy`, `deadline-exceeded`, `unknown-job`,
+  `unknown-target`, `controller-displaced`, and `unknown-op` are wire
+  documents (refusal.go), never free-form error strings. The
+  lifecycle is two verbs: cancel is the forge-side cancel plus one
+  RunCleanCycle; resume is Prepare again.
+
+The protocol's golden fixtures live under
+`testdata/golden/middleman` (regenerate with
+`go test -run "TestGoldenMiddleman|TestGoldenHandshake|TestGoldenRefusal" -update-golden`
+only when the wire changes deliberately). The both-import pin
+(`TestBothImportPin`) reads the sibling agent checkout's go.mod and
+committed vendor tree and fails when the agent's pinned copy declares
+a different protocol version than this module.
 
 ## Compatibility
 
