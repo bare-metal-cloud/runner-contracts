@@ -10,19 +10,27 @@ import (
 )
 
 // DecodeJobSpec decodes a job-spec document strictly. The document must
-// be well-formed JSON, carry only fields the schema knows, and carry
-// each known field at most once. Concretely, the decoder refuses:
+// be well-formed JSON and carry only fields the schema knows; at the
+// document's top level, each schema key must appear exactly once,
+// matched case-sensitively. Concretely, the decoder refuses:
 //
 //   - a document larger than MaxDocumentBytes (the document_size rule,
 //     checked before any parsing bounds the work a hostile document can
 //     force),
-//   - an unknown field, named, by the unknown_field rule. Keys are
-//     matched case-SENSITIVELY against the schema's exact tag set: the
-//     stdlib's struct decode folds "JOB_ID" into job_id by its
+//   - an unknown field, named, by the unknown_field rule. Top-level
+//     keys are matched case-SENSITIVELY against the schema's exact tag
+//     set: the stdlib's struct decode folds "JOB_ID" into job_id by its
 //     case-insensitive match, and a case-variant key almost always means
 //     the sender meant something the receiver would silently move,
-//   - a duplicated key (the stdlib decode would silently take the last
-//     occurrence).
+//   - a duplicated top-level key (the stdlib decode would silently take
+//     the last occurrence).
+//
+// The exact-key and duplicate-key refusal is a TOP-level guarantee: keys
+// nested inside a value are not scanned, so a nested document carrying
+// the same key twice (or a case-variant of it) falls through to
+// encoding/json's usual case-insensitive, last-occurrence-wins decode.
+// Nested unknown fields are still refused by the strict struct decode
+// itself.
 //
 // The decoder accepts keys in any order (wire compatibility is about
 // content, not byte form); canonical byte form is only mandatory where
@@ -72,9 +80,11 @@ func DecodeJobSpec(doc []byte) (JobSpec, error) {
 
 // DecodeCancelSpec decodes a cancel-directive document strictly, with
 // DecodeJobSpec's exact law: the document must be well-formed JSON,
-// carry only fields the schema knows, carry each known field at most
-// once, and stay inside MaxDocumentBytes. The returned error is a typed
-// ValidationErrors (RuleMalformed, RuleUnknownField, or
+// carry only fields the schema knows, carry each top-level schema key
+// exactly once, and stay inside MaxDocumentBytes (the exact-key and
+// duplicate-key refusal is a top-level guarantee — nested duplicate
+// keys fall through to encoding/json, see DecodeJobSpec). The returned
+// error is a typed ValidationErrors (RuleMalformed, RuleUnknownField, or
 // RuleDocumentSize).
 func DecodeCancelSpec(doc []byte) (CancelSpec, error) {
 	if len(doc) > MaxDocumentBytes {
@@ -141,10 +151,16 @@ func schemaFieldNames(t reflect.Type) map[string]bool {
 
 // checkDocumentKeys scans the top level of doc as a JSON object and
 // refuses any key that is not exactly a schema tag (case-sensitive), or
-// that appears more than once. Values are skipped, not parsed: content
-// validation is the validation battery's job; this pass only guards the
-// key set the strict struct decode would otherwise handle too loosely
-// (case-insensitive matches, silent last-wins duplicates).
+// that appears more than once. That refusal is a TOP-level guarantee:
+// values are skipped, not parsed, so duplicate or case-variant keys
+// nested inside a value are NOT scanned — they fall through to
+// encoding/json's usual case-insensitive, last-occurrence-wins struct
+// decode. Content validation is the validation battery's job; this pass
+// only guards the top-level key set the strict struct decode would
+// otherwise handle too loosely.
+//
+// R2.13: the nested duplicate-key scan is owed here — that story's
+// compat battery owns the recursive refusal.
 func checkDocumentKeys(doc []byte, fieldNames map[string]bool, what string) error {
 	malformed := func(err error) error {
 		return ValidationErrors{{
