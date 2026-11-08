@@ -15,7 +15,9 @@
 #      pins, compared against each other and against THIS module's
 #      protocol version (scripts/check-both-import-pin.sh; set
 #      BMC_AGENT_ROOT / BMC_DAEMON_ROOT to local checkouts, or let it
-#      fetch the two public repos).
+#      fetch the refs from GitHub — only runner-contracts itself is
+#      public, so the fetch of the two PRIVATE consumer repos needs an
+#      authenticated gh).
 #
 # Usage (from a clean contracts checkout, before tagging):
 #   scripts/release-check.sh

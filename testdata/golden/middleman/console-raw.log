@@ -1,6 +1,6 @@
 2026-11-06T09:15:01.0000000Z Runner Listener connected, waiting for job
 2026-11-06T09:15:02.0000000Z Running job: build-and-test (attempt 1)
-2026-11-06T09:15:03.0000000Z Deploying with registry token ghs_a1B2c3D4e5F6g7H8i9J0kK1lL2
-2026-11-06T09:15:04.0000000Z Pushing image runner:ghp_Z9y8x7W6v5U4t3S2@ghcr.io/acme/widget:sha-9f2c
-2026-11-06T09:15:05.0000000Z Cache key seeded from signing seed bmcsign-seed-7f3e91a4c2d8b605
+2026-11-06T09:15:03.0000000Z Deploying with registry token FAKE_ghs_a1B2c3D4e5F6g7H8i9J0kK1lL2
+2026-11-06T09:15:04.0000000Z Pushing image runner:FAKE_ghp_Z9y8x7W6v5U4t3S2@ghcr.io/acme/widget:sha-9f2c
+2026-11-06T09:15:05.0000000Z Cache key seeded from signing seed FAKE_bmcsign-seed-7f3e91a4c2d8b605
 2026-11-06T09:15:06.0000000Z Job build-and-test completed with result Success

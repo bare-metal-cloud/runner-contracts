@@ -222,33 +222,46 @@ func scanObjectKeys(dec *json.Decoder, fieldNames map[string]bool, what, path st
 // scanValueKeys consumes the value dec is positioned on and recurses
 // into it when it is an object or an array — the levels the
 // exactly-once key law reaches. Scalars are consumed and done.
+//
+// The walk streams tokens from the SAME decoder and never re-decodes a
+// value into a fresh sub-decoder. (An earlier form decoded each value
+// with dec.Decode(&raw) and re-scanned the copy, which re-copied the
+// whole remaining value at every nesting level: quadratic — a ~1MB
+// document nested 9,900 deep spent tens of seconds of CPU in
+// DecodeJobSpec. The token walk reads each value's tokens once and
+// decodes the same document in milliseconds.) Recursion depth is
+// bounded by the stdlib scanner's own nesting cap: encoding/json
+// refuses documents nested deeper than 10,000 levels as malformed
+// ("exceeded max depth") before the walk can descend further, so the
+// walk cannot recurse unboundedly on any document the decoder accepts.
 func scanValueKeys(dec *json.Decoder, fieldNames map[string]bool, what, path string, malformed func(error) error) error {
-	var raw json.RawMessage
-	if err := dec.Decode(&raw); err != nil {
+	tok, err := dec.Token()
+	if err != nil {
 		return malformed(err)
 	}
-	switch raw[0] {
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return nil // a scalar: consumed, nothing further to scan
+	}
+	switch delim {
 	case '{':
-		sub := json.NewDecoder(bytes.NewReader(raw))
-		if _, err := sub.Token(); err != nil { // the opening brace
-			return malformed(err)
-		}
-		return scanObjectKeys(sub, fieldNames, what, path, malformed)
+		return scanObjectKeys(dec, fieldNames, what, path, malformed)
 	case '[':
-		sub := json.NewDecoder(bytes.NewReader(raw))
-		if _, err := sub.Token(); err != nil { // the opening bracket
-			return malformed(err)
-		}
-		for sub.More() {
-			if err := scanValueKeys(sub, fieldNames, what, path+"[]", malformed); err != nil {
+		for dec.More() {
+			if err := scanValueKeys(dec, fieldNames, what, path+"[]", malformed); err != nil {
 				return err
 			}
 		}
-		if _, err := sub.Token(); err != nil { // consume the closing bracket
+		if _, err := dec.Token(); err != nil { // consume the closing bracket
 			return malformed(err)
 		}
+		return nil
+	default:
+		// '}' or ']' cannot begin a value: every caller sits where a
+		// value may appear and those delimiters are consumed by the
+		// readers above. Unreachable; refuse rather than silently pass.
+		return malformed(fmt.Errorf("invalid character %q looking for beginning of value", delim))
 	}
-	return nil
 }
 
 // decodeDocument decodes a job-spec document without field strictness. It

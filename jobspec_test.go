@@ -210,6 +210,66 @@ func TestDecodeJobSpecRefusesOversizedDocument(t *testing.T) {
 	}
 }
 
+// TestDecodeJobSpecDeepNesting pins the key walk's depth behavior (the
+// walk streams tokens from the decoder, so its recursion is bounded by
+// encoding/json's own nesting cap of 10,000 levels — the stdlib refuses
+// deeper documents as malformed before the walk can descend further):
+//
+//   - a document nested just UNDER the cap completes the walk and gets
+//     its verdict from the strict decode (the nested unknown field is
+//     refused by name);
+//   - a document nested OVER the cap is refused as malformed with the
+//     stdlib's own "exceeded max depth" message — not a crash, not a
+//     silent pass.
+//
+// The under-cap document's deep chain carries a padded string at every
+// level (the shape an earlier copy-per-level walk made quadratic), so a
+// regression to that shape turns this test slow — the battery itself
+// notices.
+func TestDecodeJobSpecDeepNesting(t *testing.T) {
+	deepDoc := func(depth int) []byte {
+		var b bytes.Buffer
+		b.WriteString(`{"job_id":"job-20261108-000009","run_reference":"acme/payments@main:run-423","attempt":1,"image":"ghcr.io/acme/widget@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","timeout_seconds":60,"limits":`)
+		pad := strings.Repeat("a", 64)
+		for i := 0; i < depth; i++ {
+			b.WriteString(`{"pad":"`)
+			b.WriteString(pad)
+			b.WriteString(`","n":`)
+		}
+		b.WriteString(`"leaf"`)
+		for i := 0; i < depth; i++ {
+			b.WriteByte('}')
+		}
+		b.WriteByte('}')
+		return b.Bytes()
+	}
+
+	t.Run("under the cap the walk completes", func(t *testing.T) {
+		_, err := contracts.DecodeJobSpec(deepDoc(9900))
+		if err == nil {
+			t.Fatal("DecodeJobSpec accepted a document with unknown nested fields; want refusal")
+		}
+		assertUnknownFieldNames(t, err, "pad")
+	})
+
+	t.Run("over the cap the stdlib refuses", func(t *testing.T) {
+		_, err := contracts.DecodeJobSpec(deepDoc(10500))
+		if err == nil {
+			t.Fatal("DecodeJobSpec accepted a document nested past the scanner's depth cap; want refusal")
+		}
+		errs, ok := err.(contracts.ValidationErrors)
+		if !ok {
+			t.Fatalf("error is %T, want contracts.ValidationErrors", err)
+		}
+		if len(errs) == 0 || errs[0].Rule != contracts.RuleMalformed {
+			t.Fatalf("rule = %v, want %s", errs, contracts.RuleMalformed)
+		}
+		if !strings.Contains(errs[0].Message, "exceeded max depth") {
+			t.Fatalf("the refusal must be the scanner's depth cap, got: %s", errs[0].Message)
+		}
+	})
+}
+
 // assertUnknownFieldNames asserts that err is a ValidationErrors carrying
 // an unknown_field finding whose message names field.
 func assertUnknownFieldNames(t *testing.T, err error, field string) {
