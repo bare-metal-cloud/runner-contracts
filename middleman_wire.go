@@ -301,11 +301,20 @@ func CanonicalMiddlemanJSON(doc any) ([]byte, error) {
 
 // The strict decoders, one per wire document. Each applies the module's
 // document law: size-bounded before any parsing, only fields the schema
-// knows (named by the unknown_field rule, case-sensitively, each at
-// most once), well-formed JSON, and nothing trailing the value. A
-// document carrying an unknown field — which is how custody material
-// such as a signing seed would have to ride the wire — is refused by
-// name.
+// knows (named by the unknown_field rule; the top-level keys are
+// matched case-sensitively against the schema), well-formed JSON, and
+// nothing trailing the value. A document carrying an unknown field —
+// which is how custody material such as a signing seed would have to
+// ride the wire — is refused by name.
+//
+// The exactly-once key refusal reaches every nesting level: a key may
+// appear at most once at the top level and inside every nested object
+// and array element (a delivery inside a prepare-request, an artifact
+// inside the delivery). The key walk refuses a second occurrence,
+// naming the duplicate's position in the refusal ("inside $.delivery"
+// for a nested one), before the struct decode could fold it silently;
+// nested unknown fields stay the strict struct decode's refusal. See
+// decodeMiddlemanDocument and checkDocumentKeys.
 
 func DecodePrepareRequest(doc []byte) (PrepareRequest, error) {
 	var r PrepareRequest
@@ -397,8 +406,10 @@ var (
 )
 
 // decodeMiddlemanDocument is DecodeJobSpec's exact document law applied
-// to a middleman wire document: the size bound, the exact-key top-level
-// scan, the strict struct decode, and the nothing-trailing check.
+// to a middleman wire document: the size bound, the exact-key walk over
+// the whole document (each key exactly once at every nesting level — a
+// delivery's own fields included), the strict struct decode, and the
+// nothing-trailing check.
 func decodeMiddlemanDocument(doc []byte, fieldNames map[string]bool, what string, v any) error {
 	if len(doc) > MaxDocumentBytes {
 		return ValidationErrors{{
