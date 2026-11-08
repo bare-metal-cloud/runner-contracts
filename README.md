@@ -185,15 +185,94 @@ identity, accepted or the typed refusal). The laws the wire encodes:
   `unknown-target`, `controller-displaced`, and `unknown-op` are wire
   documents (refusal.go), never free-form error strings. The
   lifecycle is two verbs: cancel is the forge-side cancel plus one
-  RunCleanCycle; resume is Prepare again.
+  RunCleanCycle; resume is Prepare again. The vocabulary's doc comment
+  lists every name, and the battery pins the set closed: the daemon's
+  `console-line-oversize`, `digest-pin-mismatch`, and
+  `launch-binary-missing` are ALARM JOURNAL lines (the
+  journal-plus-close convention for failures the vocabulary has no
+  name for), deliberately NOT wire refusal names — a refusal document
+  carrying one is refused by the battery. Growing the vocabulary is a
+  deliberate contracts version.
+- **Strict decode at every nesting level.** The decoders refuse a
+  duplicated key at ANY depth (the stdlib decode would silently take
+  the last occurrence), name the duplicate's position (`inside
+  $.limits`, `inside $.clean.targets[]`), and keep refusing unknown
+  fields at depth through the struct decode.
 
 The protocol's golden fixtures live under
 `testdata/golden/middleman` (regenerate with
 `go test -run "TestGoldenMiddleman|TestGoldenHandshake|TestGoldenRefusal" -update-golden`
-only when the wire changes deliberately). The both-import pin
-(`TestBothImportPin`) reads the sibling agent checkout's go.mod and
-committed vendor tree and fails when the agent's pinned copy declares
-a different protocol version than this module.
+only when the wire changes deliberately). They pin every op's request
+and reply, the handshake's accept and loud refusal, each named refusal
+shape, and the masked-versus-raw console line pair (three planted
+secrets; the raw form never appears in the mirrored capture — the
+daemon seeds the same pair in its own tree and serves it masked).
+
+## The compat battery and the release gate (the test pin law)
+
+**A failing protocol-compatibility test BLOCKS a new contract
+version's release.** The battery is this repo's test suite plus the
+cross-repo pin check; no tag goes out over a red battery. What the
+battery pins:
+
+- **The wire shapes** — the golden fixtures above, diffed byte-for-byte
+  on every run; a shape change without a deliberate fixture update
+  fails the battery.
+- **The version-negotiation matrix** — v1 is EXACT-MATCH-ONLY. The
+  matrix walks a window of versions around `ProtocolVersion`: exactly
+  the equal pair accepts (with the echo), every skew pair refuses with
+  the refusal document naming BOTH versions and the expected rule, and
+  the answer round-trips the strict decoder in every row.
+- **The refusal vocabulary** — exactly the six names, each composed by
+  its constructor, each pinned as a golden document, each round-tripped
+  through the strict decoder; the set is closed (see the typed
+  refusals above).
+- **The masked-versus-raw console pair** — the tap stance's wire form:
+  every served record declares `masked=true`, an unmasked record is
+  refused, and no raw secret appears in the mirrored capture.
+- **The nested duplicate-key law** — the exactly-once key refusal at
+  every nesting level, with the duplicate's position named.
+
+**The both-import pin.** The agent and the daemon both import this
+module, and the protocol only works while both sides carry the SAME
+version. The check exists in three forms:
+
+1. **The local test** (`TestBothImportPin`): reads a sibling agent
+   checkout's go.mod and committed vendor tree (`BMC_AGENT_ROOT`
+   points at the agent checkout; standalone checkouts skip it).
+2. **The cross-repo script** (`scripts/check-both-import-pin.sh`):
+   reads BOTH sides' pins — from local checkouts
+   (`--agent-root`/`--daemon-root`) or fetched from GitHub — and fails
+   when the pins differ from each other or when either vendored copy
+   declares a different protocol version than this module. The agent
+   (`bare-metal-cloud/agent`) and the daemon (`bare-metal-cloud/runner-man`)
+   repos are PRIVATE, so the fetch form needs an authenticated `gh`
+   with read access (or, in this repo's CI, the org secret
+   `BMC_CROSS_REPO_TOKEN`); the script fails loudly when it cannot
+   read a source — it never silently passes on an unreadable repo.
+3. **The CI step**: the workflow runs the script on every push and
+   pull request, so the pin comparison is the hosted form of the same
+   check. (Venue note, 2026-11-08: this repo's hosted runs were
+   cancelled by the runner group between 2026-11-06 and this writing —
+   the workflow definition, including this step, ships now and runs
+   when the runner group serves the repo again.)
+
+**Releasing a contracts version** (the flow the test pin law governs):
+
+```sh
+# 1. Make the wire change deliberately: schema + fixtures + tests.
+#    A wire SHAPE change bumps ProtocolVersion; the battery grows with it.
+go test -run "TestGolden" -update-golden   # only after the deliberate change
+# 2. Run the release gate — everything a tag must pass:
+scripts/release-check.sh
+# 3. Green gate, then tag.
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+`scripts/release-check.sh` runs gofmt, vet, the full battery, and the
+cross-repo both-import pin, and refuses the release on any failure.
+A red battery is the law working: fix the code or make the deliberate
+wire change (version bump, fixture update) — never bypass the gate.
 
 ## Compatibility
 

@@ -244,23 +244,33 @@ func TestGoldenHandshakeFixtures(t *testing.T) {
 	})
 }
 
+// goldenRefusalFixtures is the vocabulary's golden set: the fixture
+// name and the exact named shape each pins. The golden pinning test
+// below and the vocabulary completeness test (compat_test.go) consume
+// this one table, so a vocabulary name without a golden document — or
+// a golden document that drifted from its named shape — fails the
+// battery in both places.
+var goldenRefusalFixtures = []struct {
+	name  string
+	shape contracts.Refusal
+}{
+	{"refusal-busy", contracts.RefusalBusyOp(contracts.OpPrepare)},
+	{"refusal-deadline-exceeded", contracts.RefusalDeadline()},
+	{"refusal-unknown-job", contracts.RefusalUnknownJobRef("job-20261106-000009")},
+	{"refusal-unknown-target", contracts.RefusalUnknownTargetRef(contracts.CleanTargetStage, "/var/lib/runnermand/stages/op-prepare-0001")},
+	{"refusal-controller-displaced", contracts.RefusalDisplacedBy("agent-build-2242")},
+	{"refusal-unknown-op", contracts.RefusalUnknownOpName("exec_shell")},
+}
+
 // TestGoldenRefusalFixtures pins each named refusal shape as its own
 // wire document (the typed vocabulary, never a free-form error string).
 func TestGoldenRefusalFixtures(t *testing.T) {
-	shapes := map[string]contracts.Refusal{
-		"refusal-busy":                 contracts.RefusalBusyOp(contracts.OpPrepare),
-		"refusal-deadline-exceeded":    contracts.RefusalDeadline(),
-		"refusal-unknown-job":          contracts.RefusalUnknownJobRef("job-20261106-000009"),
-		"refusal-unknown-target":       contracts.RefusalUnknownTargetRef(contracts.CleanTargetStage, "/var/lib/runnermand/stages/op-prepare-0001"),
-		"refusal-controller-displaced": contracts.RefusalDisplacedBy("agent-build-2242"),
-		"refusal-unknown-op":           contracts.RefusalUnknownOpName("exec_shell"),
-	}
-	for name, refusal := range shapes {
-		t.Run(name, func(t *testing.T) {
-			if err := refusal.Validate(); err != nil {
+	for _, fx := range goldenRefusalFixtures {
+		t.Run(fx.name, func(t *testing.T) {
+			if err := fx.shape.Validate(); err != nil {
 				t.Fatalf("fixture refusal is not valid: %v", err)
 			}
-			pinGoldenDoc(t, name, refusal, decodeRefusal)
+			pinGoldenDoc(t, fx.name, fx.shape, decodeRefusal)
 		})
 	}
 }

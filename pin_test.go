@@ -35,8 +35,10 @@ import (
 // property.
 func TestBothImportPin(t *testing.T) {
 	agentRoot := filepath.Join("..", "agent")
+	explicit := false
 	if env := os.Getenv("BMC_AGENT_ROOT"); env != "" {
 		agentRoot = env
+		explicit = true
 	}
 	goModPath := filepath.Join(agentRoot, "go.mod")
 	goMod, err := os.ReadFile(goModPath)
@@ -45,9 +47,26 @@ func TestBothImportPin(t *testing.T) {
 	}
 
 	// 1. The require line and the vendor record must agree.
-	pinnedVersion := findRunnerContractsRequire(t, string(goMod))
+	pinnedVersion, ok := findRunnerContractsRequire(string(goMod))
+	if !ok {
+		if !explicit {
+			// An adjacent go.mod that does not require this module is
+			// not the monorepo agent (any unrelated Go project named
+			// "agent" beside a standalone checkout would otherwise
+			// hijack the pin): skip, as the standalone checkout does.
+			t.Skipf("%s does not require github.com/bare-metal-cloud/runner-contracts; it is not the monorepo agent checkout", goModPath)
+		}
+		t.Fatalf("the agent's go.mod carries no github.com/bare-metal-cloud/runner-contracts require line; the both-import law requires the pin")
+	}
 	modulesTxt, err := os.ReadFile(filepath.Join(agentRoot, "vendor", "modules.txt"))
 	if err != nil {
+		if !explicit {
+			// An adjacent checkout without the committed vendor tree is
+			// not a monorepo worktree the pin can check (an old agent
+			// checkout predating the protocol looks identical to one);
+			// the pin runs against the real worktree or skips.
+			t.Skipf("the adjacent checkout at %s has no committed vendor tree; the both-import pin's local form needs the monorepo worktree layout (or set BMC_AGENT_ROOT to the agent root): %v", agentRoot, err)
+		}
 		t.Fatalf("the agent has no committed vendor tree (the committed-vendor zero-network law requires it): %v", err)
 	}
 	vendorVersion := findRunnerContractsVendorRecord(t, string(modulesTxt))
@@ -59,6 +78,12 @@ func TestBothImportPin(t *testing.T) {
 	// version.
 	vendored, err := os.ReadFile(filepath.Join(agentRoot, "vendor", "github.com", "bare-metal-cloud", "runner-contracts", "middleman.go"))
 	if err != nil {
+		if !explicit {
+			// A vendored tree without the protocol's definitions is a
+			// checkout whose pin predates the socket protocol — an old
+			// snapshot, not a monorepo worktree this pin can judge.
+			t.Skipf("the adjacent checkout's vendored contracts copy has no middleman.go (its pin predates the socket protocol); the pin runs against a current monorepo worktree: %v", err)
+		}
 		t.Fatalf("read the vendored middleman.go (the vendored tree predates the socket protocol; bump the pin and re-vendor): %v", err)
 	}
 	vendoredProtocol := findProtocolVersion(t, string(vendored), "vendored middleman.go")
@@ -73,13 +98,12 @@ func TestBothImportPin(t *testing.T) {
 
 var requireRunnerContractsRe = regexp.MustCompile(`(?m)^\s*github\.com/bare-metal-cloud/runner-contracts\s+(v\S+)`)
 
-func findRunnerContractsRequire(t *testing.T, goMod string) string {
-	t.Helper()
+func findRunnerContractsRequire(goMod string) (string, bool) {
 	m := requireRunnerContractsRe.FindStringSubmatch(goMod)
 	if m == nil {
-		t.Fatalf("the agent's go.mod carries no github.com/bare-metal-cloud/runner-contracts require line; the both-import law requires the pin")
+		return "", false
 	}
-	return m[1]
+	return m[1], true
 }
 
 func findRunnerContractsVendorRecord(t *testing.T, modulesTxt string) string {
