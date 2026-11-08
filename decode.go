@@ -21,8 +21,8 @@ import (
 //     stdlib's struct decode folds "JOB_ID" into job_id by its
 //     case-insensitive match, and a case-variant key almost always means
 //     the sender meant something the receiver would silently move,
-//   - a duplicated key (the stdlib decode would silently take the last
-//     occurrence).
+//   - a duplicated key at ANY nesting level (the stdlib decode would
+//     silently take the last occurrence).
 //
 // The decoder accepts keys in any order (wire compatibility is about
 // content, not byte form); canonical byte form is only mandatory where
@@ -139,12 +139,22 @@ func schemaFieldNames(t reflect.Type) map[string]bool {
 	return names
 }
 
-// checkDocumentKeys scans the top level of doc as a JSON object and
-// refuses any key that is not exactly a schema tag (case-sensitive), or
-// that appears more than once. Values are skipped, not parsed: content
-// validation is the validation battery's job; this pass only guards the
-// key set the strict struct decode would otherwise handle too loosely
-// (case-insensitive matches, silent last-wins duplicates).
+// checkDocumentKeys walks the document's object tree and refuses any
+// key that breaks the document law. At the TOP level every key must be
+// exactly a schema tag — case-sensitive, unknown refused. At EVERY
+// level, top and nested, each key may appear at most once: the stdlib
+// decode silently takes the last occurrence of a duplicate key at any
+// depth, so the exactly-once refusal reaches below the top level too
+// (before R2.13 the scan stopped at the top level, and a duplicate
+// nested inside an object or an array element slipped through to the
+// silent last-wins).
+//
+// Values are scanned, not interpreted: a nested UNKNOWN field stays the
+// strict struct decode's refusal (DisallowUnknownFields names it), while
+// a nested DUPLICATE key — which the struct decode would silently fold —
+// is refused here. Arrays are walked, so an object inside an array
+// carries the same law. The walk is bounded by MaxDocumentBytes, which
+// the caller checks before any parsing.
 func checkDocumentKeys(doc []byte, fieldNames map[string]bool, what string) error {
 	malformed := func(err error) error {
 		return ValidationErrors{{
@@ -161,7 +171,16 @@ func checkDocumentKeys(doc []byte, fieldNames map[string]bool, what string) erro
 	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
 		return malformed(fmt.Errorf("document is not a JSON object"))
 	}
-	seen := make(map[string]bool, len(fieldNames))
+	return scanObjectKeys(dec, fieldNames, what, "$", malformed)
+}
+
+// scanObjectKeys reads one JSON object body off dec (the opening brace
+// is already consumed), applies the key law at this nesting level, and
+// recurses into every value it passes. path names the scan's position
+// for the refusal: "$" is the top level, "envelope" a nested object,
+// "artifacts[]" an element of the artifacts array.
+func scanObjectKeys(dec *json.Decoder, fieldNames map[string]bool, what, path string, malformed func(error) error) error {
+	seen := make(map[string]bool)
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {
@@ -171,7 +190,7 @@ func checkDocumentKeys(doc []byte, fieldNames map[string]bool, what string) erro
 		if !ok {
 			return malformed(fmt.Errorf("object key is not a string"))
 		}
-		if !fieldNames[key] {
+		if path == "$" && !fieldNames[key] {
 			return ValidationErrors{{
 				Field:   "document",
 				Rule:    RuleUnknownField,
@@ -179,22 +198,70 @@ func checkDocumentKeys(doc []byte, fieldNames map[string]bool, what string) erro
 			}}
 		}
 		if seen[key] {
+			where := ""
+			if path != "$" {
+				where = " inside " + path
+			}
 			return ValidationErrors{{
 				Field:   "document",
 				Rule:    RuleUnknownField,
-				Message: fmt.Sprintf("document carries the field %q more than once; a field may appear exactly once", key),
+				Message: fmt.Sprintf("document carries the field %q more than once%s; a field may appear exactly once at every nesting level", key, where),
 			}}
 		}
 		seen[key] = true
-		var raw json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			return malformed(err)
+		if err := scanValueKeys(dec, fieldNames, what, path+"."+key, malformed); err != nil {
+			return err
 		}
 	}
 	if _, err := dec.Token(); err != nil { // consume the closing brace
 		return malformed(err)
 	}
 	return nil
+}
+
+// scanValueKeys consumes the value dec is positioned on and recurses
+// into it when it is an object or an array — the levels the
+// exactly-once key law reaches. Scalars are consumed and done.
+//
+// The walk streams tokens from the SAME decoder and never re-decodes a
+// value into a fresh sub-decoder. (An earlier form decoded each value
+// with dec.Decode(&raw) and re-scanned the copy, which re-copied the
+// whole remaining value at every nesting level: quadratic — a ~1MB
+// document nested 9,900 deep spent tens of seconds of CPU in
+// DecodeJobSpec. The token walk reads each value's tokens once and
+// decodes the same document in milliseconds.) Recursion depth is
+// bounded by the stdlib scanner's own nesting cap: encoding/json
+// refuses documents nested deeper than 10,000 levels as malformed
+// ("exceeded max depth") before the walk can descend further, so the
+// walk cannot recurse unboundedly on any document the decoder accepts.
+func scanValueKeys(dec *json.Decoder, fieldNames map[string]bool, what, path string, malformed func(error) error) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return malformed(err)
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return nil // a scalar: consumed, nothing further to scan
+	}
+	switch delim {
+	case '{':
+		return scanObjectKeys(dec, fieldNames, what, path, malformed)
+	case '[':
+		for dec.More() {
+			if err := scanValueKeys(dec, fieldNames, what, path+"[]", malformed); err != nil {
+				return err
+			}
+		}
+		if _, err := dec.Token(); err != nil { // consume the closing bracket
+			return malformed(err)
+		}
+		return nil
+	default:
+		// '}' or ']' cannot begin a value: every caller sits where a
+		// value may appear and those delimiters are consumed by the
+		// readers above. Unreachable; refuse rather than silently pass.
+		return malformed(fmt.Errorf("invalid character %q looking for beginning of value", delim))
+	}
 }
 
 // decodeDocument decodes a job-spec document without field strictness. It

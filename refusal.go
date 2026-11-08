@@ -35,6 +35,19 @@ type RefusalName string
 //	unknown-op            — a request whose op is not in the op set
 //	                      (the daemon's authority is scoped to exactly
 //	                      the six verbs)
+//
+// This list is the whole vocabulary. The daemon's runnermand carries
+// failure conventions that are deliberately NOT wire names here:
+// console-line-oversize, digest-pin-mismatch, and launch-binary-missing
+// are the daemon's ALARM JOURNAL lines — the journal-plus-close
+// convention for failures the vocabulary has no name for. The daemon
+// fires the alarm, journals the cause, and closes the connection
+// loudly; the agent's retry law owns the aftermath. Naming one of them
+// in a wire refusal document is refused by the refusal battery, so the
+// alarm-line convention can never silently become protocol vocabulary —
+// growing this list is a deliberate contracts version (the digest-pin
+// verify-failed refusal is the known candidate, deferred until a
+// version admits it).
 const (
 	RefusalBusy                RefusalName = "busy"
 	RefusalDeadlineExceeded    RefusalName = "deadline-exceeded"

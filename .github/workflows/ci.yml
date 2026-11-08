@@ -32,6 +32,21 @@ jobs:
       - name: Test battery
         run: go test ./... -count=1
 
+      - name: Cross-repo both-import pin (the release gate's CI form)
+        # The agent (bare-metal-cloud/agent) and the daemon
+        # (bare-metal-cloud/runner-man) are PRIVATE today, so this step
+        # needs a token that can read them: the org-level secret
+        # BMC_CROSS_REPO_TOKEN (a read-only PAT). Without a readable
+        # token the script FAILS loudly — the pin check never silently
+        # passes because it could not look. Until the secret is
+        # provisioned this step fails by design; the local form
+        # (scripts/check-both-import-pin.sh with --agent-root /
+        # --daemon-root, or an authenticated gh) is the runnable
+        # backstop.
+        env:
+          GH_TOKEN: ${{ secrets.BMC_CROSS_REPO_TOKEN || github.token }}
+        run: scripts/check-both-import-pin.sh
+
       - name: Refuse private imports
         run: |
           offenders=$(go list -deps ./... | grep -E '^github\.com/bare-metal-cloud/' | grep -vE '^github\.com/bare-metal-cloud/runner-contracts(/|$)' || true)
