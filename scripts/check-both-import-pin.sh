@@ -124,7 +124,7 @@ fetch_raw() {
 			return 0
 		fi
 	fi
-	echo "FAIL: cannot read ${repo}:${ref}/${path} — the repo is private and no readable authenticated gh is available (run gh auth login with read access to ${repo}, or pass a local checkout root instead)" >&2
+	echo "FAIL: cannot read ${repo}:${ref}/${path} — the repo is private and no readable authenticated gh is available (in hosted CI: have an org owner share the org CI App secrets CI_APP_ID/CI_APP_SECRET with this repo and cover ${repo} in the app's installation; on a machine: run gh auth login with read access to ${repo}, or pass a local checkout root instead)" >&2
 	return 1
 }
 

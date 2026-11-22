@@ -32,19 +32,38 @@ jobs:
       - name: Test battery
         run: go test ./... -count=1
 
+      - name: Mint a cross-repo read token (the org CI App)
+        id: crossrepo-token
+        # The sanctioned cross-repo credential is the org-level CI App pair
+        # (CI_APP_ID / CI_APP_SECRET) — the same org secret pair the xfer
+        # green-tag publisher mints from. It must be shared with THIS repo
+        # (org secret "selected repositories") and the app installation
+        # must cover agent and runner-man. The minted token is scoped to
+        # those two repos, contents:read only, and revoked when the job
+        # ends. When the pair is not shared here the step is skipped and
+        # the pin check below fails loudly — the check never silently
+        # passes because it could not look.
+        if: ${{ secrets.CI_APP_ID != '' && secrets.CI_APP_SECRET != '' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_SECRET }}
+          owner: ${{ github.repository_owner }}
+          repositories: 'agent,runner-man'
+          permission-contents: read
+
       - name: Cross-repo both-import pin (the release gate's CI form)
         # The agent (bare-metal-cloud/agent) and the daemon
-        # (bare-metal-cloud/runner-man) are PRIVATE today, so this step
-        # needs a token that can read them: the org-level secret
-        # BMC_CROSS_REPO_TOKEN (a read-only PAT). Without a readable
-        # token the script FAILS loudly — the pin check never silently
-        # passes because it could not look. Until the secret is
-        # provisioned this step fails by design; the local form
+        # (bare-metal-cloud/runner-man) are PRIVATE, so this step needs a
+        # token that can read them: the org CI App installation token
+        # minted above. Without one (org secrets not shared with this
+        # repo) the script FAILS loudly — the pin check never silently
+        # passes because it could not look. The local form
         # (scripts/check-both-import-pin.sh with --agent-root /
         # --daemon-root, or an authenticated gh) is the runnable
         # backstop.
         env:
-          GH_TOKEN: ${{ secrets.BMC_CROSS_REPO_TOKEN || github.token }}
+          GH_TOKEN: ${{ steps.crossrepo-token.outputs.token || github.token }}
         run: scripts/check-both-import-pin.sh
 
       - name: Refuse private imports
