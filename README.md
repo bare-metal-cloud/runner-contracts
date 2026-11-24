@@ -247,9 +247,11 @@ version. The check exists in three forms:
    declares a different protocol version than this module. The agent
    (`bare-metal-cloud/agent`) and the daemon (`bare-metal-cloud/runner-man`)
    repos are PRIVATE, so the fetch form needs an authenticated `gh`
-   with read access (or, in this repo's CI, the org secret
-   `BMC_CROSS_REPO_TOKEN`); the script fails loudly when it cannot
-   read a source — it never silently passes on an unreadable repo.
+   with read access (or, in this repo's CI, an installation token of
+   the org CI App minted from the org secrets `CI_APP_ID` /
+   `CI_APP_SECRET`, scoped to those two repos); the script fails
+   loudly when it cannot read a source — it never silently passes on
+   an unreadable repo.
 3. **The CI step**: the workflow runs the script on every push and
    pull request, so the pin comparison is the hosted form of the same
    check. (Venue note, 2026-11-08: this repo's hosted runs were
